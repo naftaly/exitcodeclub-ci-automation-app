@@ -2,7 +2,7 @@ name: iOS Crash Automation CI
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -19,7 +19,17 @@ jobs:
           curl -Ls https://mise.run | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Cache mise tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/share/mise/installs
+            ~/.local/share/mise/downloads
+          key: mise-${{ runner.os }}-${{ hashFiles('mise.toml') }}
+
       - name: Install toolchain
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           mise install
           mise exec -- tuist version
