@@ -29,14 +29,19 @@ jobs:
           mise exec -- tuist install
           mise exec -- tuist generate --no-open
 
+      - name: Install xcbeautify
+        run: brew install xcbeautify
+
       - name: Build
         run: |
+          set -o pipefail
           xcodebuild build-for-testing \
             -project ExitCodeClubCIAutomationApp.xcodeproj \
             -scheme ExitCodeClubCIAutomationApp \
             -configuration Release \
             -destination 'platform=iOS Simulator,name=iPhone 17' \
-            -derivedDataPath "${{ runner.temp }}/DerivedData"
+            -derivedDataPath "${{ runner.temp }}/DerivedData" \
+            2>&1 | xcbeautify
 
       - name: Upload dSYMs
         run: |
@@ -46,9 +51,11 @@ jobs:
 
       - name: Run UI crash/relaunch flow
         run: |
+          set -o pipefail
           xcodebuild test-without-building \
             -project ExitCodeClubCIAutomationApp.xcodeproj \
             -scheme ExitCodeClubCIAutomationApp \
             -configuration Release \
             -destination 'platform=iOS Simulator,name=iPhone 17' \
-            -derivedDataPath "${{ runner.temp }}/DerivedData"
+            -derivedDataPath "${{ runner.temp }}/DerivedData" \
+            2>&1 | xcbeautify
