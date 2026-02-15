@@ -1,0 +1,42 @@
+name: iOS Crash Automation CI
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ui-crash-flow:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install mise
+        run: |
+          curl -Ls https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install toolchain
+        run: |
+          mise install
+          mise exec -- tuist version
+
+      - name: Generate Xcode project
+        run: |
+          mise exec -- tuist install
+          mise exec -- tuist generate --no-open
+
+      - name: Run UI crash/relaunch flow
+        run: |
+          xcodebuild test \
+            -project ExitCodeClubCIAutomationApp.xcodeproj \
+            -scheme ExitCodeClubCIAutomationApp \
+            -configuration Release \
+            -destination 'platform=iOS Simulator,name=iPhone 17' \
+            -derivedDataPath "${{ runner.temp }}/DerivedData"
+
+      # dSYMs are uploaded via a post-build script phase in the Xcode project,
+      # ensuring they are available before the UI tests trigger a crash.
