@@ -9,6 +9,8 @@ jobs:
   ui-crash-flow:
     runs-on: macos-15
     timeout-minutes: 45
+    env:
+      DERIVED_DATA_PATH: ${{ runner.temp }}/DerivedData
 
     steps:
       - name: Checkout
@@ -29,14 +31,26 @@ jobs:
           mise exec -- tuist install
           mise exec -- tuist generate --no-open
 
-      - name: Run UI crash/relaunch flow
+      - name: Build
         run: |
-          xcodebuild test \
+          xcodebuild build-for-testing \
             -project ExitCodeClubCIAutomationApp.xcodeproj \
             -scheme ExitCodeClubCIAutomationApp \
             -configuration Release \
             -destination 'platform=iOS Simulator,name=iPhone 17' \
-            -derivedDataPath "${{ runner.temp }}/DerivedData"
+            -derivedDataPath "$DERIVED_DATA_PATH"
 
-      # dSYMs are uploaded via a post-build script phase in the Xcode project,
-      # ensuring they are available before the UI tests trigger a crash.
+      - name: Upload dSYMs
+        run: |
+          ./scripts/upload-dsyms-ci.sh \
+            --backend-url "https://kscrash-api-765738384004.us-central1.run.app" \
+            --dsym-folder "$DERIVED_DATA_PATH/Build/Products/Release-iphonesimulator"
+
+      - name: Run UI crash/relaunch flow
+        run: |
+          xcodebuild test-without-building \
+            -project ExitCodeClubCIAutomationApp.xcodeproj \
+            -scheme ExitCodeClubCIAutomationApp \
+            -configuration Release \
+            -destination 'platform=iOS Simulator,name=iPhone 17' \
+            -derivedDataPath "$DERIVED_DATA_PATH"

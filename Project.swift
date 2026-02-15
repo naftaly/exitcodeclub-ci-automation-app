@@ -39,18 +39,6 @@ let project = Project(
                 "CFBundleDisplayName": "ECC CI Crash",
             ]),
             sources: ["ExitCodeClubCIAutomationApp/Sources/**"],
-            scripts: [
-                .post(
-                    script: """
-                    "${SRCROOT}/scripts/upload-dsyms-ci.sh" \
-                      --backend-url "https://kscrash-api-765738384004.us-central1.run.app" \
-                      --dsym-folder "${BUILT_PRODUCTS_DIR}"
-                    """,
-                    name: "Upload dSYMs",
-                    basedOnDependencyAnalysis: false,
-                    shellPath: "/bin/bash"
-                ),
-            ],
             dependencies: [
                 .target(name: "CrashGeneratorsObjC"),
                 .package(product: "Recording", type: .runtime),
