@@ -9,8 +9,6 @@ jobs:
   ui-crash-flow:
     runs-on: macos-15
     timeout-minutes: 45
-    env:
-      DERIVED_DATA_PATH: ${{ runner.temp }}/DerivedData
 
     steps:
       - name: Checkout
@@ -38,13 +36,13 @@ jobs:
             -scheme ExitCodeClubCIAutomationApp \
             -configuration Release \
             -destination 'platform=iOS Simulator,name=iPhone 17' \
-            -derivedDataPath "$DERIVED_DATA_PATH"
+            -derivedDataPath "${{ runner.temp }}/DerivedData"
 
       - name: Upload dSYMs
         run: |
           ./scripts/upload-dsyms-ci.sh \
             --backend-url "https://kscrash-api-765738384004.us-central1.run.app" \
-            --dsym-folder "$DERIVED_DATA_PATH/Build/Products/Release-iphonesimulator"
+            --dsym-folder "${{ runner.temp }}/DerivedData/Build/Products/Release-iphonesimulator"
 
       - name: Run UI crash/relaunch flow
         run: |
@@ -53,4 +51,4 @@ jobs:
             -scheme ExitCodeClubCIAutomationApp \
             -configuration Release \
             -destination 'platform=iOS Simulator,name=iPhone 17' \
-            -derivedDataPath "$DERIVED_DATA_PATH"
+            -derivedDataPath "${{ runner.temp }}/DerivedData"
