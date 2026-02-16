@@ -23,6 +23,9 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      - name: Install iOS Simulator
+        run: xcodebuild -downloadPlatform iOS
+
       - name: Install mise
         run: |
           curl -Ls https://mise.run | sh
