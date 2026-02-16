@@ -23,8 +23,12 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Install iOS Simulator
-        run: xcodebuild -downloadPlatform iOS
+      - name: Ensure iOS Simulator is available
+        run: |
+          xcodebuild -runFirstLaunch
+          xcrun simctl list
+          xcodebuild -downloadPlatform iOS
+          xcodebuild -runFirstLaunch
 
       - name: Install mise
         run: |
