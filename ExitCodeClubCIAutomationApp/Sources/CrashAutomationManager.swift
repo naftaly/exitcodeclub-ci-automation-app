@@ -12,14 +12,6 @@ enum CrashType: String, CaseIterable {
     case forceUnwrapNil
     case arrayOutOfBounds
 
-    // Signals
-    case sigabrt
-    case sigsegv
-    case sigbus
-    case sigfpe
-    case sigill
-    case sigtrap
-
     // ObjC/C++
     case cppException
     case useAfterFree
@@ -67,9 +59,13 @@ enum CrashType: String, CaseIterable {
 
     // Memory
     case outOfMemory
+    case outOfMemory2
+    case outOfMemory3
 
     // Hang + watchdog kill
     case mainThreadHang
+    case mainThreadHang2
+    case mainThreadHang3
 
     static func random() -> CrashType {
         allCases.randomElement()!
@@ -81,12 +77,6 @@ enum CrashType: String, CaseIterable {
         case .swiftAssertionFailure: return "assertionFailure()"
         case .forceUnwrapNil: return "Force-unwrap nil"
         case .arrayOutOfBounds: return "Array out-of-bounds"
-        case .sigabrt: return "SIGABRT"
-        case .sigsegv: return "SIGSEGV"
-        case .sigbus: return "SIGBUS"
-        case .sigfpe: return "SIGFPE"
-        case .sigill: return "SIGILL"
-        case .sigtrap: return "SIGTRAP"
         case .cppException: return "C++ exception"
         case .useAfterFree: return "Use-after-free"
         case .doubleFree: return "Double-free"
@@ -114,8 +104,8 @@ enum CrashType: String, CaseIterable {
         case .objcExceptionFromCPP: return "ObjC exception from C++"
         case .corruptMallocTracking: return "Corrupt malloc tracking"
         case .pthreadCrashWithLockHeld: return "pthread crash with lock held"
-        case .outOfMemory: return "Out of memory (jetsam)"
-        case .mainThreadHang: return "Main thread hang (SIGKILL)"
+        case .outOfMemory, .outOfMemory2, .outOfMemory3: return "Out of memory (jetsam)"
+        case .mainThreadHang, .mainThreadHang2, .mainThreadHang3: return "Main thread hang (SIGKILL)"
         }
     }
 
@@ -139,25 +129,6 @@ enum CrashType: String, CaseIterable {
             let array = [1, 2, 3]
             let idx = Int(ProcessInfo.processInfo.processIdentifier) | 0x100
             print(array[idx])
-
-        case .sigabrt:
-            abort()
-
-        case .sigsegv:
-            let ptr = UnsafeMutablePointer<Int>(bitPattern: 0x1)!
-            ptr.pointee = 42
-
-        case .sigbus:
-            raise(SIGBUS)
-
-        case .sigfpe:
-            raise(SIGFPE)
-
-        case .sigill:
-            raise(SIGILL)
-
-        case .sigtrap:
-            raise(SIGTRAP)
 
         case .cppException:
             CrashWithCPPException()
@@ -244,7 +215,7 @@ enum CrashType: String, CaseIterable {
         case .pthreadCrashWithLockHeld:
             CrashWithPthreadLockHeld()
 
-        case .outOfMemory:
+        case .outOfMemory, .outOfMemory2, .outOfMemory3:
             // Jetsam kills at ~6 GB — allocate in 512 MB chunks to hit the limit fast.
             // KSCrash's MemoryTermination monitor detects this on the next launch.
             let chunkSize = 512 * 1024 * 1024 // 512 MB
@@ -253,7 +224,7 @@ enum CrashType: String, CaseIterable {
                 memset(buf, 0x41, chunkSize) // wire every page
             }
 
-        case .mainThreadHang:
+        case .mainThreadHang, .mainThreadHang2, .mainThreadHang3:
             // Watchdog kills after 10s, busy-wait main thread with realistic work
             let pid = getpid()
             DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 10) {
