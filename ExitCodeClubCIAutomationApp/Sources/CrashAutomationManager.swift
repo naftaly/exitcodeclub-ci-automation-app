@@ -256,8 +256,7 @@ enum CrashType: String, CaseIterable {
         case .mainThreadHang:
             // Watchdog kills after 10s, busy-wait main thread with realistic work
             let pid = getpid()
-            DispatchQueue.global(qos: .userInitiated).async {
-                sleep(10)
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 10) {
                 kill(pid, SIGKILL)
             }
             FlamegraphHang.run(duration: 60)
