@@ -33,5 +33,8 @@ struct ContentView: View {
             .accessibilityIdentifier("sendReportsButton")
         }
         .padding()
+        .onAppear {
+            manager.onUIReady()
+        }
     }
 }
