@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   upload-symbols:
@@ -23,14 +23,22 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      - name: Detect latest iOS simulator build
+        id: detect
+        run: |
+          # Use simctl which works regardless of runtime install layout
+          xcrun simctl list runtimes
+          BUILD=$(xcrun simctl list runtimes \
+            | grep '^iOS ' \
+            | tail -1 \
+            | grep -oE '[0-9A-Z]+\)$' \
+            | tr -d ')')
+          echo "build=$BUILD"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+
       - name: Upload simulator system symbols
         run: |
-          echo "Available runtimes:"
-          ./scripts/upload-system-symbols.sh --simulator --list
-
-          BUILD=$(./scripts/upload-system-symbols.sh --simulator --list \
-            | grep -oE '\(([^)]+)\)' \
-            | tr -d '()' \
-            | tail -1)
-          echo "Uploading build: $BUILD"
-          ./scripts/upload-system-symbols.sh --simulator --build "$BUILD"
+          echo "Uploading build: ${{ steps.detect.outputs.build }}"
+          ./scripts/upload-system-symbols.sh \
+            --simulator \
+            --build "${{ steps.detect.outputs.build }}"

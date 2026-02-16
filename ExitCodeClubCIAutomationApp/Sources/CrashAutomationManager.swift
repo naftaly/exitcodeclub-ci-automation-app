@@ -434,6 +434,7 @@ final class CrashAutomationManager: ObservableObject {
                 sentCount += 1
             } catch {
                 failedCount += 1
+                print("[CrashAutomation] Failed to send report \(reportID): \(error)")
             }
         }
 
