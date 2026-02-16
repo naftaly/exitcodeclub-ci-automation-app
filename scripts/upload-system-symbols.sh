@@ -367,102 +367,106 @@ upload_version() {
             continue
         fi
 
-        # Get UUID using dwarfdump
-        UUID=$(xcrun dwarfdump --uuid "$binary_path" 2>/dev/null | grep -o '[0-9A-F-]\{36\}' | tr -d '-' | head -1)
+        # Get all UUIDs using dwarfdump (fat binaries have one per arch slice)
+        UUIDS=$(xcrun dwarfdump --uuid "$binary_path" 2>/dev/null | grep -o '[0-9A-F-]\{36\}' | tr -d '-')
 
-        if [[ -z "$UUID" ]]; then
+        if [[ -z "$UUIDS" ]]; then
             continue
         fi
 
-        ((FOUND_COUNT++))
         FILE_SIZE=$(stat -f%z "$binary_path" 2>/dev/null || stat -c%s "$binary_path" 2>/dev/null || echo "0")
-        TOTAL_BYTES=$((TOTAL_BYTES + FILE_SIZE))
 
-        if [[ "$DRY_RUN" == "true" ]]; then
-            continue
-        fi
+        # Process each UUID (one per arch slice in fat binaries)
+        while IFS= read -r UUID; do
+            ((FOUND_COUNT++))
+            TOTAL_BYTES=$((TOTAL_BYTES + FILE_SIZE))
 
-        # Large files: upload directly to GCS via signed URL
-        if [[ $FILE_SIZE -gt $MAX_SINGLE_FILE_BYTES ]]; then
-            # Upload any pending batch first
-            upload_batch
+            if [[ "$DRY_RUN" == "true" ]]; then
+                continue
+            fi
 
-            FILE_SIZE_MB=$(echo "scale=1; $FILE_SIZE / 1024 / 1024" | bc)
-            ((BATCH_NUM++))
+            # Large files: upload directly to GCS via signed URL
+            if [[ $FILE_SIZE -gt $MAX_SINGLE_FILE_BYTES ]]; then
+                # Upload any pending batch first
+                upload_batch
 
-            # Get signed upload URL
-            URL_RESPONSE=$(curl -s -X POST \
-                -H "Content-Type: application/json" \
-                -d "{\"uuid\": \"$UUID\", \"binary_name\": \"$BINARY_NAME\", \"file_size\": $FILE_SIZE}" \
-                "$BACKEND_URL/api/system-symbols/upload-url" 2>/dev/null)
+                FILE_SIZE_MB=$(echo "scale=1; $FILE_SIZE / 1024 / 1024" | bc)
+                ((BATCH_NUM++))
 
-            # Check for errors (409 = already exists)
-            if echo "$URL_RESPONSE" | jq -e '.detail' >/dev/null 2>&1; then
-                ERROR_DETAIL=$(echo "$URL_RESPONSE" | jq -r '.detail')
-                if [[ "$ERROR_DETAIL" == *"already exists"* ]]; then
-                    ((SKIPPED_COUNT++))
-                    echo "  Batch $BATCH_NUM (1 file, ${FILE_SIZE_MB}MB): 0 new, 1 exist, 0 failed"
-                else
+                # Get signed upload URL
+                URL_RESPONSE=$(curl -s -X POST \
+                    -H "Content-Type: application/json" \
+                    -d "{\"uuid\": \"$UUID\", \"binary_name\": \"$BINARY_NAME\", \"file_size\": $FILE_SIZE}" \
+                    "$BACKEND_URL/api/system-symbols/upload-url" 2>/dev/null)
+
+                # Check for errors (409 = already exists)
+                if echo "$URL_RESPONSE" | jq -e '.detail' >/dev/null 2>&1; then
+                    ERROR_DETAIL=$(echo "$URL_RESPONSE" | jq -r '.detail')
+                    if [[ "$ERROR_DETAIL" == *"already exists"* ]]; then
+                        ((SKIPPED_COUNT++))
+                        echo "  Batch $BATCH_NUM (1 file, ${FILE_SIZE_MB}MB): 0 new, 1 exist, 0 failed"
+                    else
+                        ((FAILED_COUNT++))
+                        echo "  Batch $BATCH_NUM (1 file, ${FILE_SIZE_MB}MB): 0 new, 0 exist, 1 failed"
+                    fi
+                    continue
+                fi
+
+                # Extract upload URL and GCS path
+                UPLOAD_URL=$(echo "$URL_RESPONSE" | jq -r '.upload_url')
+                GCS_PATH=$(echo "$URL_RESPONSE" | jq -r '.gcs_path')
+
+                if [[ -z "$UPLOAD_URL" ]] || [[ "$UPLOAD_URL" == "null" ]]; then
                     ((FAILED_COUNT++))
                     echo "  Batch $BATCH_NUM (1 file, ${FILE_SIZE_MB}MB): 0 new, 0 exist, 1 failed"
+                    continue
+                fi
+
+                # Upload directly to GCS
+                BATCH_LABEL="Batch $BATCH_NUM (1 file, ${FILE_SIZE_MB}MB)"
+                curl -s -o /dev/null -w "%{http_code}" -X PUT \
+                    -H "Content-Type: application/octet-stream" \
+                    --data-binary "@$binary_path" \
+                    "$UPLOAD_URL" \
+                    >/tmp/upload_http_code
+                HTTP_CODE=$(cat /tmp/upload_http_code 2>/dev/null || echo "000")
+
+                if [[ "$HTTP_CODE" != "200" ]]; then
+                    ((FAILED_COUNT++))
+                    echo "0 new, 1 failed (HTTP $HTTP_CODE)"
+                    continue
+                fi
+
+                # Register the uploaded file
+                REG_RESPONSE=$(curl -s -X POST \
+                    -H "Content-Type: application/json" \
+                    -d "{\"uuid\": \"$UUID\", \"binary_name\": \"$BINARY_NAME\", \"gcs_path\": \"$GCS_PATH\", \"ios_version\": \"$FULL_VERSION\"}" \
+                    "$BACKEND_URL/api/system-symbols/register" 2>/dev/null)
+
+                if echo "$REG_RESPONSE" | jq -e '.success == true' >/dev/null 2>&1; then
+                    ((UPLOADED_COUNT++))
+                    ((DIRECT_UPLOAD_COUNT++))
+                    echo "1 new, 0 failed"
+                else
+                    ((FAILED_COUNT++))
+                    echo "0 new, 1 failed (registration error)"
                 fi
                 continue
             fi
 
-            # Extract upload URL and GCS path
-            UPLOAD_URL=$(echo "$URL_RESPONSE" | jq -r '.upload_url')
-            GCS_PATH=$(echo "$URL_RESPONSE" | jq -r '.gcs_path')
+            # If adding this file would exceed batch size, upload current batch first
+            if [[ $BATCH_COUNT -gt 0 ]] && [[ $((BATCH_SIZE_BYTES + FILE_SIZE)) -gt $MAX_BATCH_SIZE_BYTES ]]; then
+                upload_batch
+            fi
 
-            if [[ -z "$UPLOAD_URL" ]] || [[ "$UPLOAD_URL" == "null" ]]; then
-                ((FAILED_COUNT++))
-                echo "  Batch $BATCH_NUM (1 file, ${FILE_SIZE_MB}MB): 0 new, 0 exist, 1 failed"
+            # Copy file with UUID prefix to batch directory
+            cp "$binary_path" "$BATCH_DIR/${UUID}_${BINARY_NAME}" 2>/dev/null || {
+                echo "    Failed to copy: $BINARY_NAME"
                 continue
-            fi
-
-            # Upload directly to GCS
-            BATCH_LABEL="Batch $BATCH_NUM (1 file, ${FILE_SIZE_MB}MB)"
-            curl -s -o /dev/null -w "%{http_code}" -X PUT \
-                -H "Content-Type: application/octet-stream" \
-                --data-binary "@$binary_path" \
-                "$UPLOAD_URL" \
-                >/tmp/upload_http_code
-            HTTP_CODE=$(cat /tmp/upload_http_code 2>/dev/null || echo "000")
-
-            if [[ "$HTTP_CODE" != "200" ]]; then
-                ((FAILED_COUNT++))
-                echo "0 new, 1 failed (HTTP $HTTP_CODE)"
-                continue
-            fi
-
-            # Register the uploaded file
-            REG_RESPONSE=$(curl -s -X POST \
-                -H "Content-Type: application/json" \
-                -d "{\"uuid\": \"$UUID\", \"binary_name\": \"$BINARY_NAME\", \"gcs_path\": \"$GCS_PATH\", \"ios_version\": \"$FULL_VERSION\"}" \
-                "$BACKEND_URL/api/system-symbols/register" 2>/dev/null)
-
-            if echo "$REG_RESPONSE" | jq -e '.success == true' >/dev/null 2>&1; then
-                ((UPLOADED_COUNT++))
-                ((DIRECT_UPLOAD_COUNT++))
-                echo "1 new, 0 failed"
-            else
-                ((FAILED_COUNT++))
-                echo "0 new, 1 failed (registration error)"
-            fi
-            continue
-        fi
-
-        # If adding this file would exceed batch size, upload current batch first
-        if [[ $BATCH_COUNT -gt 0 ]] && [[ $((BATCH_SIZE_BYTES + FILE_SIZE)) -gt $MAX_BATCH_SIZE_BYTES ]]; then
-            upload_batch
-        fi
-
-        # Copy file with UUID prefix to batch directory
-        cp "$binary_path" "$BATCH_DIR/${UUID}_${BINARY_NAME}" 2>/dev/null || {
-            echo "    Failed to copy: $BINARY_NAME"
-            continue
-        }
-        ((BATCH_COUNT++))
-        BATCH_SIZE_BYTES=$((BATCH_SIZE_BYTES + FILE_SIZE))
+            }
+            ((BATCH_COUNT++))
+            BATCH_SIZE_BYTES=$((BATCH_SIZE_BYTES + FILE_SIZE))
+        done <<< "$UUIDS"
     done < <(find "${SCAN_DIRS[@]}" -type f -print0 2>/dev/null)
 
     # Upload any remaining files in the last batch
