@@ -316,12 +316,11 @@ upload_version() {
         BATCH_SIZE_MB=$(echo "scale=1; $BATCH_SIZE_BYTES / 1024 / 1024" | bc)
         BATCH_LABEL="Batch $BATCH_NUM ($BATCH_COUNT new + $SKIPPED_IN_BATCH exist, ${BATCH_SIZE_MB}MB)"
 
-        # Show progress during upload (curl progress bar to tty)
-        echo -n "  $BATCH_LABEL: "
-        curl --progress-bar -o /tmp/upload_response.json -w "%{http_code}" -X POST \
+        # Upload batch
+        curl -s -o /tmp/upload_response.json -w "%{http_code}" -X POST \
             -F "file=@$ZIP_FILE" \
             "$BACKEND_URL/api/system-symbols?ios_version=$ENCODED_VERSION" \
-            2>/dev/tty >/tmp/upload_http_code
+            >/tmp/upload_http_code
         HTTP_CODE=$(cat /tmp/upload_http_code 2>/dev/null || echo "000")
         RESPONSE=$(cat /tmp/upload_response.json 2>/dev/null || echo "[]")
 
@@ -333,12 +332,10 @@ upload_version() {
         UPLOADED_COUNT=$((UPLOADED_COUNT + BATCH_UPLOADED))
         FAILED_COUNT=$((FAILED_COUNT + BATCH_FAILED))
 
-        # Move up one line, clear it, and print final result
-        printf "\033[1A\033[2K  $BATCH_LABEL: "
         if [[ "$HTTP_CODE" != "200" ]]; then
-            echo "Error (HTTP $HTTP_CODE)"
+            echo "  $BATCH_LABEL: Error (HTTP $HTTP_CODE)"
         else
-            echo "$BATCH_UPLOADED new, $BATCH_FAILED failed"
+            echo "  $BATCH_LABEL: $BATCH_UPLOADED new, $BATCH_FAILED failed"
         fi
 
         # Clear batch directory for next batch
@@ -422,18 +419,14 @@ upload_version() {
                 continue
             fi
 
-            # Upload directly to GCS with progress bar
+            # Upload directly to GCS
             BATCH_LABEL="Batch $BATCH_NUM (1 file, ${FILE_SIZE_MB}MB)"
-            echo -n "  $BATCH_LABEL: "
-            curl --progress-bar -o /dev/null -w "%{http_code}" -X PUT \
+            curl -s -o /dev/null -w "%{http_code}" -X PUT \
                 -H "Content-Type: application/octet-stream" \
                 --data-binary "@$binary_path" \
                 "$UPLOAD_URL" \
-                2>/dev/tty >/tmp/upload_http_code
+                >/tmp/upload_http_code
             HTTP_CODE=$(cat /tmp/upload_http_code 2>/dev/null || echo "000")
-
-            # Move up and clear progress line
-            printf "\033[1A\033[2K  $BATCH_LABEL: "
 
             if [[ "$HTTP_CODE" != "200" ]]; then
                 ((FAILED_COUNT++))

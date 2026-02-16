@@ -26,9 +26,11 @@ jobs:
       - name: Detect latest iOS simulator build
         id: detect
         run: |
-          xcrun simctl list runtimes -j
-          BUILD=$(xcrun simctl list runtimes -j \
-            | jq -r '[.runtimes[] | select(.platform == "iOS" and .isAvailable)] | last | .buildversion')
+          ./scripts/upload-system-symbols.sh --simulator --list
+          BUILD=$(./scripts/upload-system-symbols.sh --simulator --list \
+            | tail -1 \
+            | grep -oE '\(([^)]+)\)' \
+            | tr -d '()')
           echo "build=$BUILD"
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
 
