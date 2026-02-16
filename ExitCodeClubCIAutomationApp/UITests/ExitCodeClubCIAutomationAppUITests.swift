@@ -29,8 +29,9 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
 
             print("Iteration \(i)/\(iterations): Launched, waiting for crash...")
 
-            guard waitForTermination(of: crashingApp, timeout: 30) else {
+            guard waitForTermination(of: crashingApp, timeout: 20) else {
                 XCTFail("Iteration \(i)/\(iterations): App did not terminate")
+                crashingApp.terminate()
                 continue
             }
             print("Iteration \(i)/\(iterations): Crashed OK")
@@ -55,9 +56,9 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
 
             let statusText = status.label
             print("Iteration \(i)/\(iterations): Report status — \(statusText)")
-            XCTAssertFalse(
-                statusText.contains("Failed: 1"),
-                "Iteration \(i)/\(iterations): At least one report failed to send"
+            XCTAssertTrue(
+                statusText.contains("Failed: 0"),
+                "Iteration \(i)/\(iterations): Reports failed — \(statusText)"
             )
         }
     }

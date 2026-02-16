@@ -341,7 +341,7 @@ final class CrashAutomationManager: ObservableObject {
     /// If the chosen crash type didn't terminate the process, kill it.
     private func scheduleAbortFallback() {
         DispatchQueue.global(qos: .userInitiated).async {
-            sleep(15)
+            sleep(5)
             abort()
         }
     }
@@ -427,6 +427,7 @@ final class CrashAutomationManager: ObservableObject {
 
         var sentCount = 0
         var failedCount = 0
+        var lastError: String?
 
         for reportID in reportIDs {
             do {
@@ -434,10 +435,15 @@ final class CrashAutomationManager: ObservableObject {
                 sentCount += 1
             } catch {
                 failedCount += 1
+                lastError = "\(error)"
                 print("[CrashAutomation] Failed to send report \(reportID): \(error)")
             }
         }
 
-        reportsStatusText = "Sent: \(sentCount), Failed: \(failedCount)"
+        var status = "Sent: \(sentCount), Failed: \(failedCount)"
+        if let lastError {
+            status += "\nError: \(lastError)"
+        }
+        reportsStatusText = status
     }
 }
