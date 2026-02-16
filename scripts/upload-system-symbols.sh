@@ -221,9 +221,6 @@ upload_version() {
     FAILED_COUNT=0
     TOTAL_BYTES=0
 
-    # Collect all symbols first
-    declare -a SYMBOLS_TO_UPLOAD
-
     # For simulator runtimes, only scan directories that contain dylibs/frameworks
     # (the full RuntimeRoot has ~500K files, most are resources)
     if [[ "$SIMULATOR" == "true" ]]; then
@@ -241,64 +238,9 @@ upload_version() {
         SCAN_DIRS=("$SYMBOLS_DIR")
     fi
 
-    # Find all files in the scan directories
-    while IFS= read -r -d '' binary_path; do
-        BINARY_NAME=$(basename "$binary_path")
-
-        # Skip known non-binary files by extension
-        case "$BINARY_NAME" in
-            *.plist|*.png|*.jpg|*.jpeg|*.gif|*.strings|*.nib|*.storyboardc|*.car|*.mom|*.momd|*.dat|*.db|*.json|*.xml|*.html|*.css|*.js|*.ttf|*.otf|*.wav|*.mp3|*.m4a|*.caf|*.aif|*.aiff|*.pdf|*.lproj|*.xcassets|*.metallib|*.mlmodelc|*.tbd|*.swiftmodule|*.swiftinterface|*.abi.json|*.swiftsourceinfo|*.private.swiftinterface)
-                continue
-                ;;
-        esac
-
-        ((SCANNED_COUNT++))
-
-        # Show progress every 1000 files
-        if [[ $((SCANNED_COUNT % 1000)) -eq 0 ]]; then
-            echo "  Scanned $SCANNED_COUNT files, found $FOUND_COUNT Mach-O binaries..."
-        fi
-
-        # Quick check if it's a Mach-O file
-        if ! file "$binary_path" 2>/dev/null | grep -q "Mach-O"; then
-            continue
-        fi
-
-        # Get UUID using dwarfdump
-        UUID=$(xcrun dwarfdump --uuid "$binary_path" 2>/dev/null | grep -o '[0-9A-F-]\{36\}' | tr -d '-' | head -1)
-
-        if [[ -n "$UUID" ]]; then
-            ((FOUND_COUNT++))
-            FILE_SIZE=$(stat -f%z "$binary_path" 2>/dev/null || stat -c%s "$binary_path" 2>/dev/null || echo "0")
-            TOTAL_BYTES=$((TOTAL_BYTES + FILE_SIZE))
-            SYMBOLS_TO_UPLOAD+=("$binary_path|$UUID|$BINARY_NAME|$FILE_SIZE")
-        fi
-    done < <(find "${SCAN_DIRS[@]}" -type f -print0 2>/dev/null)
-
-    TOTAL_MB=$(echo "scale=1; $TOTAL_BYTES / 1024 / 1024" | bc)
-    echo ""
-    echo "Scanned: $SCANNED_COUNT files"
-    echo "Found: $FOUND_COUNT Mach-O binaries with UUIDs (${TOTAL_MB}MB total)"
-
-    if [[ $FOUND_COUNT -eq 0 ]]; then
-        echo "No symbols found to upload"
-        exit 0
-    fi
-
     if [[ "$DRY_RUN" == "true" ]]; then
+        echo "Mode: DRY RUN — scanning only, no uploads"
         echo ""
-        echo "Would upload $FOUND_COUNT symbols. Sample:"
-        for i in "${!SYMBOLS_TO_UPLOAD[@]}"; do
-            if [[ $i -ge 20 ]]; then
-                echo "  ... and $((FOUND_COUNT - 20)) more"
-                break
-            fi
-            IFS='|' read -r path uuid name <<< "${SYMBOLS_TO_UPLOAD[$i]}"
-            echo "  $name ($uuid)"
-        done
-        echo ""
-        echo "Run without --dry-run to upload."
-        exit 0
     fi
 
     # Batch configuration
@@ -307,10 +249,6 @@ upload_version() {
     MAX_BATCH_SIZE_BYTES=$((MAX_BATCH_SIZE_MB * 1024 * 1024))
     MAX_SINGLE_FILE_MB=15
     MAX_SINGLE_FILE_BYTES=$((MAX_SINGLE_FILE_MB * 1024 * 1024))
-
-    echo ""
-    echo "Uploading $FOUND_COUNT symbols..."
-    echo ""
 
     BATCH_DIR="$WORK_DIR/batch"
     mkdir -p "$BATCH_DIR"
@@ -409,10 +347,43 @@ upload_version() {
         BATCH_SIZE_BYTES=0
     }
 
-    ENTRY_NUM=0
-    for entry in "${SYMBOLS_TO_UPLOAD[@]}"; do
-        ((ENTRY_NUM++))
-        IFS='|' read -r binary_path uuid binary_name FILE_SIZE <<< "$entry"
+    # Scan and upload as we go — no separate collection pass
+    while IFS= read -r -d '' binary_path; do
+        BINARY_NAME=$(basename "$binary_path")
+
+        # Skip known non-binary files by extension
+        case "$BINARY_NAME" in
+            *.plist|*.png|*.jpg|*.jpeg|*.gif|*.strings|*.nib|*.storyboardc|*.car|*.mom|*.momd|*.dat|*.db|*.json|*.xml|*.html|*.css|*.js|*.ttf|*.otf|*.wav|*.mp3|*.m4a|*.caf|*.aif|*.aiff|*.pdf|*.lproj|*.xcassets|*.metallib|*.mlmodelc|*.tbd|*.swiftmodule|*.swiftinterface|*.abi.json|*.swiftsourceinfo|*.private.swiftinterface)
+                continue
+                ;;
+        esac
+
+        ((SCANNED_COUNT++))
+
+        # Show progress every 1000 files
+        if [[ $((SCANNED_COUNT % 1000)) -eq 0 ]]; then
+            echo "  Scanned $SCANNED_COUNT files, found $FOUND_COUNT symbols, uploaded $UPLOADED_COUNT..."
+        fi
+
+        # Quick check if it's a Mach-O file
+        if ! file "$binary_path" 2>/dev/null | grep -q "Mach-O"; then
+            continue
+        fi
+
+        # Get UUID using dwarfdump
+        UUID=$(xcrun dwarfdump --uuid "$binary_path" 2>/dev/null | grep -o '[0-9A-F-]\{36\}' | tr -d '-' | head -1)
+
+        if [[ -z "$UUID" ]]; then
+            continue
+        fi
+
+        ((FOUND_COUNT++))
+        FILE_SIZE=$(stat -f%z "$binary_path" 2>/dev/null || stat -c%s "$binary_path" 2>/dev/null || echo "0")
+        TOTAL_BYTES=$((TOTAL_BYTES + FILE_SIZE))
+
+        if [[ "$DRY_RUN" == "true" ]]; then
+            continue
+        fi
 
         # Large files: upload directly to GCS via signed URL
         if [[ $FILE_SIZE -gt $MAX_SINGLE_FILE_BYTES ]]; then
@@ -425,7 +396,7 @@ upload_version() {
             # Get signed upload URL
             URL_RESPONSE=$(curl -s -X POST \
                 -H "Content-Type: application/json" \
-                -d "{\"uuid\": \"$uuid\", \"binary_name\": \"$binary_name\", \"file_size\": $FILE_SIZE}" \
+                -d "{\"uuid\": \"$UUID\", \"binary_name\": \"$BINARY_NAME\", \"file_size\": $FILE_SIZE}" \
                 "$BACKEND_URL/api/system-symbols/upload-url" 2>/dev/null)
 
             # Check for errors (409 = already exists)
@@ -473,7 +444,7 @@ upload_version() {
             # Register the uploaded file
             REG_RESPONSE=$(curl -s -X POST \
                 -H "Content-Type: application/json" \
-                -d "{\"uuid\": \"$uuid\", \"binary_name\": \"$binary_name\", \"gcs_path\": \"$GCS_PATH\", \"ios_version\": \"$FULL_VERSION\"}" \
+                -d "{\"uuid\": \"$UUID\", \"binary_name\": \"$BINARY_NAME\", \"gcs_path\": \"$GCS_PATH\", \"ios_version\": \"$FULL_VERSION\"}" \
                 "$BACKEND_URL/api/system-symbols/register" 2>/dev/null)
 
             if echo "$REG_RESPONSE" | jq -e '.success == true' >/dev/null 2>&1; then
@@ -493,27 +464,37 @@ upload_version() {
         fi
 
         # Copy file with UUID prefix to batch directory
-        cp "$binary_path" "$BATCH_DIR/${uuid}_${binary_name}" 2>/dev/null || {
-            echo "    Failed to copy: $binary_name"
+        cp "$binary_path" "$BATCH_DIR/${UUID}_${BINARY_NAME}" 2>/dev/null || {
+            echo "    Failed to copy: $BINARY_NAME"
             continue
         }
         ((BATCH_COUNT++))
         BATCH_SIZE_BYTES=$((BATCH_SIZE_BYTES + FILE_SIZE))
-    done
+    done < <(find "${SCAN_DIRS[@]}" -type f -print0 2>/dev/null)
 
-    # Upload any remaining files in the batch
+    # Upload any remaining files in the last batch
     upload_batch
 
+    TOTAL_MB=$(echo "scale=1; $TOTAL_BYTES / 1024 / 1024" | bc)
     echo ""
-    echo "Done."
-    echo "  Uploaded: $UPLOADED_COUNT"
-    if [[ $DIRECT_UPLOAD_COUNT -gt 0 ]]; then
-        echo "    (including $DIRECT_UPLOAD_COUNT large files via direct upload)"
+    echo "Scanned: $SCANNED_COUNT files"
+    echo "Found: $FOUND_COUNT Mach-O binaries with UUIDs (${TOTAL_MB}MB total)"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo ""
+        echo "Would upload $FOUND_COUNT symbols. Run without --dry-run to upload."
+    else
+        echo ""
+        echo "Done."
+        echo "  Uploaded: $UPLOADED_COUNT"
+        if [[ $DIRECT_UPLOAD_COUNT -gt 0 ]]; then
+            echo "    (including $DIRECT_UPLOAD_COUNT large files via direct upload)"
+        fi
+        echo "  Skipped (already exists): $SKIPPED_COUNT"
+        echo "  Failed: $FAILED_COUNT"
+        echo ""
+        echo "Re-symbolicate any reports to use the new symbols."
     fi
-    echo "  Skipped (already exists): $SKIPPED_COUNT"
-    echo "  Failed: $FAILED_COUNT"
-    echo ""
-    echo "Re-symbolicate any reports to use the new symbols."
 }
 
 # Parse arguments
