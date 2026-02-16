@@ -1,0 +1,36 @@
+name: Upload Simulator System Symbols
+
+on:
+  schedule:
+    - cron: '0 0 1 * *' # 1st of every month at midnight UTC
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  upload-symbols:
+    runs-on: macos-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Latest Stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Upload simulator system symbols
+        run: |
+          echo "Available runtimes:"
+          ./scripts/upload-system-symbols.sh --simulator --list
+
+          BUILD=$(./scripts/upload-system-symbols.sh --simulator --list \
+            | grep -oE '\(([^)]+)\)' \
+            | tr -d '()' \
+            | tail -1)
+          echo "Uploading build: $BUILD"
+          ./scripts/upload-system-symbols.sh --simulator --build "$BUILD"
