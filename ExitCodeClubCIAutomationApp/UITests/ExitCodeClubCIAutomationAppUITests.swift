@@ -32,6 +32,7 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
             guard waitForTermination(of: crashingApp, timeout: 20) else {
                 XCTFail("Iteration \(i)/\(iterations): App did not terminate")
                 crashingApp.terminate()
+                sleep(2)
                 continue
             }
             print("Iteration \(i)/\(iterations): Crashed OK")
