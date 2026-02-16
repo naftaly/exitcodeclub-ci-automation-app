@@ -35,7 +35,6 @@ set -e
 BACKEND_URL="https://kscrash-api-765738384004.us-central1.run.app"
 
 DEVICE_SUPPORT_DIR="$HOME/Library/Developer/Xcode/iOS DeviceSupport"
-SIMULATOR_VOLUMES_DIR="/Library/Developer/CoreSimulator/Volumes"
 
 show_help() {
     echo "Upload System Symbols from Xcode"
@@ -89,30 +88,20 @@ list_versions() {
 }
 
 list_simulator_versions() {
-    if [[ ! -d "$SIMULATOR_VOLUMES_DIR" ]]; then
-        echo "Error: CoreSimulator Volumes directory not found at:"
-        echo "  $SIMULATOR_VOLUMES_DIR"
-        echo ""
-        echo "Make sure you have Xcode installed and a simulator runtime downloaded."
+    local JSON
+    JSON=$(xcrun simctl list runtimes -j 2>/dev/null) || {
+        echo "Error: xcrun simctl list runtimes failed"
+        echo "Make sure Xcode is installed."
         exit 1
-    fi
+    }
 
     echo "Available iOS simulator runtimes:"
     echo ""
-    for vol in "$SIMULATOR_VOLUMES_DIR"/iOS_*; do
-        if [[ ! -d "$vol" ]]; then
-            continue
-        fi
-        # Look for .simruntime with RuntimeRoot
-        for rt in "$vol"/Library/Developer/CoreSimulator/Profiles/Runtimes/*.simruntime; do
-            if [[ -d "$rt/Contents/Resources/RuntimeRoot" ]]; then
-                rt_name=$(basename "$rt" .simruntime)
-                vol_name=$(basename "$vol")
-                build_num=$(echo "$vol_name" | sed 's/^iOS_//')
-                echo "  $rt_name ($build_num)"
-            fi
-        done
-    done
+    echo "$JSON" | jq -r '
+        .runtimes[]
+        | select(.platform == "iOS" and .isAvailable)
+        | "  iOS \(.version) (\(.buildversion))"
+    '
 }
 
 # Find the simulator RuntimeRoot for a given iOS version or build number.
@@ -121,36 +110,35 @@ find_simulator_runtime() {
     local VERSION="$1"
     local BUILD="$2"
 
-    if [[ ! -d "$SIMULATOR_VOLUMES_DIR" ]]; then
-        echo "Error: CoreSimulator Volumes directory not found"
+    local JSON
+    JSON=$(xcrun simctl list runtimes -j 2>/dev/null) || {
+        echo "Error: xcrun simctl list runtimes failed"
         exit 1
+    }
+
+    local RESULT
+    if [[ -n "$VERSION" ]]; then
+        RESULT=$(echo "$JSON" | jq -r --arg v "$VERSION" '
+            .runtimes[]
+            | select(.platform == "iOS" and .isAvailable and (.version | startswith($v)) and .runtimeRoot)
+            | "\(.runtimeRoot)|\(.version)|\(.buildversion)"
+        ' | head -1)
+    elif [[ -n "$BUILD" ]]; then
+        RESULT=$(echo "$JSON" | jq -r --arg b "$BUILD" '
+            .runtimes[]
+            | select(.platform == "iOS" and .isAvailable and (.buildversion | startswith($b)) and .runtimeRoot)
+            | "\(.runtimeRoot)|\(.version)|\(.buildversion)"
+        ' | head -1)
     fi
 
-    for vol in "$SIMULATOR_VOLUMES_DIR"/iOS_*; do
-        if [[ ! -d "$vol" ]]; then
-            continue
-        fi
-        for rt in "$vol"/Library/Developer/CoreSimulator/Profiles/Runtimes/*.simruntime; do
-            if [[ ! -d "$rt/Contents/Resources/RuntimeRoot" ]]; then
-                continue
-            fi
-            rt_name=$(basename "$rt" .simruntime)
-            # Extract version number (e.g., "26.2" from "iOS 26.2")
-            rt_version=$(echo "$rt_name" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
-            # Extract build number from volume directory name (e.g., "23C54" from "iOS_23C54")
-            vol_name=$(basename "$vol")
-            vol_build=$(echo "$vol_name" | sed 's/^iOS_//')
-            # Match by version or build number
-            if [[ -n "$VERSION" && "$rt_version" == "$VERSION"* ]] || [[ -n "$BUILD" && "$vol_build" == "$BUILD"* ]]; then
-                SYMBOLS_DIR="$rt/Contents/Resources/RuntimeRoot"
-                MATCHED_VERSION="$rt_name (Simulator)"
-                FULL_VERSION="$rt_version ($vol_build)"
-                return 0
-            fi
-        done
-    done
+    if [[ -z "$RESULT" ]]; then
+        return 1
+    fi
 
-    return 1
+    IFS='|' read -r SYMBOLS_DIR rt_version rt_build <<< "$RESULT"
+    MATCHED_VERSION="iOS $rt_version (Simulator)"
+    FULL_VERSION="$rt_version ($rt_build)"
+    return 0
 }
 
 upload_version() {
