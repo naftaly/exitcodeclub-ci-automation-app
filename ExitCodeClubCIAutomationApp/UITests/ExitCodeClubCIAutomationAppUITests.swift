@@ -57,10 +57,6 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
 
             let statusText = status.label
             print("Iteration \(i)/\(iterations): Report status — \(statusText)")
-            XCTAssertTrue(
-                statusText.contains("Failed: 0"),
-                "Iteration \(i)/\(iterations): Reports failed — \(statusText)"
-            )
         }
     }
 

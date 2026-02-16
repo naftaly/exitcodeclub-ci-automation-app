@@ -67,7 +67,6 @@ jobs:
             -configuration Release \
             -destination 'platform=iOS Simulator,name=iPhone 17' \
             -derivedDataPath "${{ runner.temp }}/DerivedData" \
-            -disableAutomaticPackageResolution \
             2>&1 | xcbeautify
 
       - name: Upload dSYMs
@@ -83,5 +82,4 @@ jobs:
             -scheme ExitCodeClubCIAutomationApp \
             -configuration Release \
             -destination 'platform=iOS Simulator,name=iPhone 17' \
-            -derivedDataPath "${{ runner.temp }}/DerivedData" \
-            -disableAutomaticPackageResolution
+            -derivedDataPath "${{ runner.temp }}/DerivedData"
