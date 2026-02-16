@@ -340,8 +340,7 @@ final class CrashAutomationManager: ObservableObject {
 
     /// If the chosen crash type didn't terminate the process, kill it.
     private func scheduleAbortFallback() {
-        DispatchQueue.global(qos: .userInitiated).async {
-            sleep(5)
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 5) {
             abort()
         }
     }
