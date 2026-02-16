@@ -26,13 +26,9 @@ jobs:
       - name: Detect latest iOS simulator build
         id: detect
         run: |
-          # Use simctl which works regardless of runtime install layout
-          xcrun simctl list runtimes
-          BUILD=$(xcrun simctl list runtimes \
-            | grep '^iOS ' \
-            | tail -1 \
-            | grep -oE '[0-9A-Z]+\)$' \
-            | tr -d ')')
+          xcrun simctl list runtimes -j
+          BUILD=$(xcrun simctl list runtimes -j \
+            | jq -r '[.runtimes[] | select(.platform == "iOS" and .isAvailable)] | last | .buildversion')
           echo "build=$BUILD"
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
 
