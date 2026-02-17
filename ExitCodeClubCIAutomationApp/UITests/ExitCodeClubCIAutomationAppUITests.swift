@@ -19,15 +19,22 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
         for i in 1...iterations {
             let runID = UUID().uuidString
 
-            // 1. Launch and crash — don't query UI elements, the app may die instantly
+            // 1. Launch normally and trigger crash via button tap
             let crashingApp = XCUIApplication()
             var env = baseEnvironment()
             env["CI_AUTOMATION_RUN_ID"] = runID
-            env["CI_AUTOMATION_CRASH_ON_LAUNCH"] = "1"
             crashingApp.launchEnvironment = env
             crashingApp.launch()
 
-            print("Iteration \(i)/\(iterations): Launched, waiting for crash...")
+            let crashButton = crashingApp.buttons["Trigger Crash Now"]
+            guard crashButton.waitForExistence(timeout: 10) else {
+                XCTFail("Iteration \(i)/\(iterations): Crash button not found")
+                crashingApp.terminate()
+                sleep(2)
+                continue
+            }
+            crashButton.tap()
+            print("Iteration \(i)/\(iterations): Tapped crash button, waiting for termination...")
 
             guard waitForTermination(of: crashingApp, timeout: 20) else {
                 XCTFail("Iteration \(i)/\(iterations): App did not terminate")
@@ -48,6 +55,8 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
             let status = relaunchedApp.staticTexts["reportsStatusLabel"]
             guard status.waitForExistence(timeout: 15) else {
                 XCTFail("Iteration \(i)/\(iterations): Status label not found after relaunch")
+                relaunchedApp.terminate()
+                sleep(2)
                 continue
             }
 
@@ -57,6 +66,9 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
 
             let statusText = status.label
             print("Iteration \(i)/\(iterations): Report status — \(statusText)")
+
+            relaunchedApp.terminate()
+            sleep(1)
         }
     }
 

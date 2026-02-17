@@ -302,9 +302,12 @@ final class CrashAutomationManager: ObservableObject {
     func triggerCrashNow() {
         let crashType = resolveCrashType()
         selectedCrashType = crashType
-        scheduleAbortFallback()
-        CallChain.run(userInfo: crashType.rawValue) {
-            crashType.triggerRandomized()
+        // Defer the crash by 2s so XCTest's tap() returns before the process dies.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.scheduleAbortFallback()
+            CallChain.run(userInfo: crashType.rawValue) {
+                crashType.triggerRandomized()
+            }
         }
     }
 
