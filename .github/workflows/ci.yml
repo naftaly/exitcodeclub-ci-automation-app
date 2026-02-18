@@ -90,7 +90,7 @@ jobs:
         if: failure() && steps.uitest.conclusion == 'failure'
         run: |
           cd "${{ runner.temp }}"
-          zip -r TestResults.xcresult.zip TestResults.xcresult
+          zip -rq TestResults.xcresult.zip TestResults.xcresult
 
       - name: Upload test results
         if: failure() && steps.uitest.conclusion == 'failure'

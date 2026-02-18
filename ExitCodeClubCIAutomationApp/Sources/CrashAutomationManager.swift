@@ -318,7 +318,9 @@ final class CrashAutomationManager: ObservableObject {
 
     private func installCrashReporter() {
         let config = KSCrashConfiguration()
-        config.enableSigTermMonitoring = true
+        // Disabled: XCUIApplication.terminate() sends SIGTERM, which KSCrash
+        // would record as a crash on every test iteration.
+        config.enableSigTermMonitoring = false
         config.enableQueueNameSearch = true
         config.enableSwapCxaThrow = true
         config.enableCompactBinaryImages = true
