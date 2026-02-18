@@ -52,14 +52,16 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
             relaunchedApp.launchEnvironment = relaunchEnv
             relaunchedApp.launch()
 
-            let status = relaunchedApp.staticTexts["reportsStatusLabel"]
-            guard status.waitForExistence(timeout: 15) else {
-                XCTFail("Iteration \(i)/\(iterations): Status label not found after relaunch")
+            let sendButton = relaunchedApp.buttons["sendReportsButton"]
+            guard sendButton.waitForExistence(timeout: 10) else {
+                XCTFail("Iteration \(i)/\(iterations): Send button not found after relaunch")
                 relaunchedApp.terminate()
                 sleep(2)
                 continue
             }
+            sendButton.tap()
 
+            let status = relaunchedApp.staticTexts["reportsStatusLabel"]
             let sentPredicate = NSPredicate(format: "label CONTAINS[c] %@", "Sent:")
             expectation(for: sentPredicate, evaluatedWith: status)
             waitForExpectations(timeout: 60)

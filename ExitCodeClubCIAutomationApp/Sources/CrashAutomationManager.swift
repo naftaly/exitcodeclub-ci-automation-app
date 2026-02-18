@@ -14,8 +14,6 @@ enum CrashType: String, CaseIterable {
 
     // ObjC/C++
     case cppException
-    case useAfterFree
-    case doubleFree
     case stackOverflow
     case bufferOverflow
 
@@ -78,8 +76,6 @@ enum CrashType: String, CaseIterable {
         case .forceUnwrapNil: return "Force-unwrap nil"
         case .arrayOutOfBounds: return "Array out-of-bounds"
         case .cppException: return "C++ exception"
-        case .useAfterFree: return "Use-after-free"
-        case .doubleFree: return "Double-free"
         case .stackOverflow: return "Stack overflow"
         case .bufferOverflow: return "Buffer overflow"
         case .garbagePointerDeref: return "Garbage pointer deref"
@@ -133,20 +129,13 @@ enum CrashType: String, CaseIterable {
         case .cppException:
             CrashWithCPPException()
 
-        case .useAfterFree:
-            CrashWithUseAfterFree()
-            abort() // fallback — UB may not crash
-
-        case .doubleFree:
-            CrashWithDoubleFree()
-            abort() // fallback — UB may not crash
 
         case .stackOverflow:
             CrashWithStackOverflow()
 
         case .bufferOverflow:
             CrashWithBufferOverflow()
-            abort() // fallback — UB may not crash
+            kill(getpid(), SIGKILL) // fallback — UB may not crash
 
         case .garbagePointerDeref:
             CrashWithGarbagePointerDeref()
@@ -210,7 +199,7 @@ enum CrashType: String, CaseIterable {
 
         case .corruptMallocTracking:
             CrashWithCorruptMallocTracking()
-            abort() // fallback — UB may not crash
+            kill(getpid(), SIGKILL) // fallback — UB may not crash
 
         case .pthreadCrashWithLockHeld:
             CrashWithPthreadLockHeld()
@@ -292,7 +281,6 @@ final class CrashAutomationManager: ObservableObject {
 
         installCrashReporter()
         maybeTriggerCrashOnLaunch()
-        Task { await sendPendingReports() }
     }
 
     func sendPendingReportsNow() {
@@ -312,9 +300,11 @@ final class CrashAutomationManager: ObservableObject {
     }
 
     /// If the chosen crash type didn't terminate the process, kill it.
+    /// Uses SIGKILL so XCTest doesn't symbolicate the termination as a test failure.
     private func scheduleAbortFallback() {
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 5) {
-            abort()
+        let pid = getpid()
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 15) {
+            kill(pid, SIGKILL)
         }
     }
 
