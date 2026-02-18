@@ -98,8 +98,8 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
 
             let status = relaunchedApp.staticTexts["reportsStatusLabel"]
             let sentPredicate = NSPredicate(format: "label CONTAINS[c] %@", "Sent:")
-            expectation(for: sentPredicate, evaluatedWith: status)
-            let waitResult = XCTWaiter().wait(for: [expectation(for: sentPredicate, evaluatedWith: status)], timeout: 60)
+            let predExpectation = XCTNSPredicateExpectation(predicate: sentPredicate, object: status)
+            let waitResult = XCTWaiter().wait(for: [predExpectation], timeout: 60)
 
             if waitResult == .completed {
                 let statusText = status.label
