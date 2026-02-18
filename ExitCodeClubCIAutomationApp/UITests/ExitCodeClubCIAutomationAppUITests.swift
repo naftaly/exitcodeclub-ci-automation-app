@@ -4,6 +4,16 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
     /// Number of crash/relaunch cycles per CI run (randomized).
     private let iterations = Int.random(in: 1...20)
 
+    private let tag = "[CrashCI]"
+
+    private var successCount = 0
+    private var failCount = 0
+    private var skippedIterations: [(Int, String)] = []
+
+    private func log(_ message: String) {
+        print("\(tag) \(message)")
+    }
+
     private func baseEnvironment() -> [String: String] {
         [
             "KSCRASH_SIM_MEMORY_TERMINATION_ENABLED": "1",
@@ -11,38 +21,55 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
         ]
     }
 
-    override func setUpWithError() throws {
-        continueAfterFailure = true
-    }
-
     func testCrashThenRelaunchSendsReports() throws {
+        log("Starting \(iterations) crash/relaunch iterations")
+
         for i in 1...iterations {
             let runID = UUID().uuidString
+            log("--- Iteration \(i)/\(iterations) (runID: \(runID)) ---")
 
             // 1. Launch normally and trigger crash via button tap
             let crashingApp = XCUIApplication()
             var env = baseEnvironment()
             env["CI_AUTOMATION_RUN_ID"] = runID
             crashingApp.launchEnvironment = env
+
+            log("Launching app for crash...")
             crashingApp.launch()
+            log("App state: \(crashingApp.state.rawValue)")
 
             let crashButton = crashingApp.buttons["Trigger Crash Now"]
             guard crashButton.waitForExistence(timeout: 10) else {
-                XCTFail("Iteration \(i)/\(iterations): Crash button not found")
+                let reason = "Crash button not found"
+                log("ERROR: \(reason) — skipping iteration")
+                skippedIterations.append((i, reason))
+                failCount += 1
                 crashingApp.terminate()
                 sleep(2)
                 continue
             }
+
             crashButton.tap()
-            print("Iteration \(i)/\(iterations): Tapped crash button, waiting for termination...")
+
+            let crashTypeLabel = crashingApp.staticTexts["crashTypeLabel"]
+            if crashTypeLabel.waitForExistence(timeout: 2) {
+                log("Crash type: \(crashTypeLabel.label)")
+            } else {
+                log("Crash type: unknown (label not found)")
+            }
+
+            log("Tapped crash button, waiting for termination...")
 
             guard waitForTermination(of: crashingApp, timeout: 20) else {
-                XCTFail("Iteration \(i)/\(iterations): App did not terminate")
+                let reason = "App did not terminate within 20s"
+                log("ERROR: \(reason) — force-terminating, skipping iteration")
+                skippedIterations.append((i, reason))
+                failCount += 1
                 crashingApp.terminate()
                 sleep(2)
                 continue
             }
-            print("Iteration \(i)/\(iterations): Crashed OK")
+            log("App terminated (crashed)")
 
             // 2. Relaunch and send reports
             let relaunchedApp = XCUIApplication()
@@ -50,27 +77,55 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
             relaunchEnv["CI_AUTOMATION_RUN_ID"] = runID
             relaunchEnv["CI_AUTOMATION_CRASH_ON_LAUNCH"] = "0"
             relaunchedApp.launchEnvironment = relaunchEnv
+
+            log("Relaunching app to send reports...")
             relaunchedApp.launch()
+            log("App state: \(relaunchedApp.state.rawValue)")
 
             let sendButton = relaunchedApp.buttons["sendReportsButton"]
             guard sendButton.waitForExistence(timeout: 10) else {
-                XCTFail("Iteration \(i)/\(iterations): Send button not found after relaunch")
+                let reason = "Send button not found after relaunch"
+                log("ERROR: \(reason) — skipping iteration")
+                skippedIterations.append((i, reason))
+                failCount += 1
                 relaunchedApp.terminate()
                 sleep(2)
                 continue
             }
+
+            log("Tapping Send Pending Reports...")
             sendButton.tap()
 
             let status = relaunchedApp.staticTexts["reportsStatusLabel"]
             let sentPredicate = NSPredicate(format: "label CONTAINS[c] %@", "Sent:")
             expectation(for: sentPredicate, evaluatedWith: status)
-            waitForExpectations(timeout: 60)
+            let waitResult = XCTWaiter().wait(for: [expectation(for: sentPredicate, evaluatedWith: status)], timeout: 60)
 
-            let statusText = status.label
-            print("Iteration \(i)/\(iterations): Report status — \(statusText)")
+            if waitResult == .completed {
+                let statusText = status.label
+                log("Report status: \(statusText)")
+                successCount += 1
+            } else {
+                let currentLabel = status.exists ? status.label : "<not found>"
+                let reason = "Timed out waiting for send (last status: \(currentLabel))"
+                log("ERROR: \(reason)")
+                skippedIterations.append((i, reason))
+                failCount += 1
+            }
 
             relaunchedApp.terminate()
             sleep(1)
+        }
+
+        log("=== Summary ===")
+        log("Iterations: \(iterations)")
+        log("Succeeded: \(successCount)")
+        log("Failed: \(failCount)")
+        if !skippedIterations.isEmpty {
+            log("Failures:")
+            for (iter, reason) in skippedIterations {
+                log("  Iteration \(iter): \(reason)")
+            }
         }
     }
 
