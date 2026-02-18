@@ -76,10 +76,20 @@ jobs:
             --dsym-folder "${{ runner.temp }}/DerivedData/Build/Products/Release-iphonesimulator"
 
       - name: Run UI crash/relaunch flow
+        id: uitest
         run: |
           xcodebuild test-without-building \
             -project ExitCodeClubCIAutomationApp.xcodeproj \
             -scheme ExitCodeClubCIAutomationApp \
             -configuration Release \
             -destination 'platform=iOS Simulator,name=iPhone 17' \
-            -derivedDataPath "${{ runner.temp }}/DerivedData"
+            -derivedDataPath "${{ runner.temp }}/DerivedData" \
+            -resultBundlePath "${{ runner.temp }}/TestResults.xcresult"
+
+      - name: Upload test results
+        if: failure() && steps.uitest.conclusion == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ${{ runner.temp }}/TestResults.xcresult
+          retention-days: 5
