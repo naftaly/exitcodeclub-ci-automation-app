@@ -22,6 +22,16 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
     }
 
     func testCrashThenRelaunchSendsReports() throws {
+        // XCTest detects intentional app crashes at terminate/teardown and
+        // reports them as failures. Suppress these since crashes are the
+        // entire point of this test.
+        let options = XCTExpectedFailure.Options()
+        options.isStrict = false
+        options.issueMatcher = { issue in
+            issue.compactDescription.contains("crashed")
+        }
+        XCTExpectFailure("Intentional app crashes are expected", options: options)
+
         log("Starting \(iterations) crash/relaunch iterations")
 
         for i in 1...iterations {
