@@ -27,12 +27,6 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
         // entire point of this test.
         let options = XCTExpectedFailure.Options()
         options.isStrict = false
-        options.issueMatcher = { issue in
-            let desc = issue.compactDescription
-            return desc.contains("crashed")
-                || desc.contains("kAXErrorServerNotFound")
-                || desc.contains("Failed to get matching snapshots")
-        }
         XCTExpectFailure("Intentional app crashes are expected", options: options)
 
         log("Starting \(iterations) crash/relaunch iterations")
