@@ -324,9 +324,10 @@ final class CrashAutomationManager: ObservableObject {
         config.enableQueueNameSearch = true
         config.enableSwapCxaThrow = true
         config.enableCompactBinaryImages = true
+        config.enableHangReporting = true
         config.reportStoreConfiguration.maxReportCount = 50
         config.reportStoreConfiguration.reportCleanupPolicy = .onSuccess
-
+        
         config.monitors = [config.monitors, .memoryTermination, .watchdog]
 
         do {
