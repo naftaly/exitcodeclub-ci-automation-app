@@ -17,15 +17,11 @@ enum CallChain {
     }
 
     static func setUserInfo(_ key: String) {
-        var info = KSCrash.shared.userInfo ?? [:]
-        info["call_chain"] = key
-        KSCrash.shared.userInfo = info
+        KSCrash.shared.setUserInfo(key, forKey: "call_chain")
     }
 
     static func clearUserInfo(_ key: String) {
-        var info = KSCrash.shared.userInfo ?? [:]
-        info.removeValue(forKey: "call_chain")
-        KSCrash.shared.userInfo = info
+        KSCrash.shared.setUserInfo(nil, forKey: "call_chain")
     }
 
     // MARK: - Dispatcher
