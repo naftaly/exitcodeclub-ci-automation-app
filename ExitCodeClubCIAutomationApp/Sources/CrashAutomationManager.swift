@@ -207,11 +207,16 @@ enum CrashType: String, CaseIterable {
         case .outOfMemory, .outOfMemory2, .outOfMemory3:
             // Jetsam kills at ~6 GB — allocate in 512 MB chunks to hit the limit fast.
             // KSCrash's MemoryTermination monitor detects this on the next launch.
-            let chunkSize = 512 * 1024 * 1024 // 512 MB
-            while true {
-                let buf = UnsafeMutableRawPointer.allocate(byteCount: chunkSize, alignment: 1)
-                memset(buf, 0x41, chunkSize) // wire every page
+            // Run off the main thread so the watchdog doesn't kill us first as a hang.
+            DispatchQueue.global(qos: .userInitiated).async {
+                let chunkSize = 512 * 1024 * 1024 // 512 MB
+                while true {
+                    let buf = UnsafeMutableRawPointer.allocate(byteCount: chunkSize, alignment: 1)
+                    memset(buf, 0x41, chunkSize) // wire every page
+                }
             }
+            // Keep the main run loop alive so the watchdog doesn't see a stuck thread.
+            RunLoop.current.run(until: .distantFuture)
 
         case .mainThreadHang, .mainThreadHang2, .mainThreadHang3:
             // Watchdog kills after 10s, busy-wait main thread with realistic work
