@@ -329,6 +329,7 @@ final class CrashAutomationManager: ObservableObject {
         config.enableCompactBinaryImages = true
         config.enableHangReporting = true
         config.reportStoreConfiguration.maxReportCount = 50
+        config.reportStoreConfiguration.maxRunSummaryCount = 50
         config.reportStoreConfiguration.reportCleanupPolicy = .onSuccess
 
         do {
@@ -376,6 +377,10 @@ final class CrashAutomationManager: ObservableObject {
         URL(string: "\(Self.backendBaseURL)/api/reports")!
     }
 
+    private func runsURL() -> URL {
+        URL(string: "\(Self.backendBaseURL)/api/runs")!
+    }
+
     private func sendPendingReports() async {
         guard let reportStore = KSCrash.shared.reportStore else {
             reportsStatusText = "No report store"
@@ -384,12 +389,9 @@ final class CrashAutomationManager: ObservableObject {
 
         let sink = CrashServiceSink(url: reportsURL())
         reportStore.sink = CrashReportFilterPipeline(filters: [sink])
+        reportStore.runSink = RunSummarySink(url: runsURL())
 
         let reportIDs = reportStore.reportIDs.map { $0.int64Value }
-        if reportIDs.isEmpty {
-            reportsStatusText = "Sent: 0, Failed: 0"
-            return
-        }
 
         var sentCount = 0
         var failedCount = 0
@@ -406,7 +408,16 @@ final class CrashAutomationManager: ObservableObject {
             }
         }
 
-        var status = "Sent: \(sentCount), Failed: \(failedCount)"
+        var runsSentCount = 0
+        do {
+            let sentRuns = try await reportStore.sendAllRunSummaries()
+            runsSentCount = sentRuns.count
+        } catch {
+            lastError = "\(error)"
+            print("[CrashAutomation] Failed to send run summaries: \(error)")
+        }
+
+        var status = "Sent: \(sentCount), Failed: \(failedCount), Runs: \(runsSentCount)"
         if let lastError {
             status += "\nError: \(lastError)"
         }
