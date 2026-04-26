@@ -26,6 +26,12 @@ struct ContentView: View {
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("triggerCrashButton")
 
+            Button("Exit Cleanly") {
+                manager.exitCleanlyNow()
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("exitCleanlyButton")
+
             Button("Send Pending Reports") {
                 manager.sendPendingReportsNow()
             }

@@ -304,6 +304,14 @@ final class CrashAutomationManager: ObservableObject {
         }
     }
 
+    /// Self-terminates the process cleanly so KSCrash finalizes the run summary
+    /// as a non-crashing run. Deferred so XCTest's tap() returns first.
+    func exitCleanlyNow() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            exit(0)
+        }
+    }
+
     /// If the chosen crash type didn't terminate the process, kill it.
     /// Uses SIGKILL so XCTest doesn't symbolicate the termination as a test failure.
     private func scheduleAbortFallback() {
@@ -334,6 +342,7 @@ final class CrashAutomationManager: ObservableObject {
 
         do {
             try KSCrash.shared.install(with: config)
+            KSCrash.shared.setUserID("\(Int.random(in: 1...1_000_000))")
         } catch {
             reportsStatusText = "Install failed: \(error.localizedDescription)"
         }

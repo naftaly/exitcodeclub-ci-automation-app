@@ -11,6 +11,10 @@ concurrency:
 
 jobs:
   ui-crash-flow:
+    strategy:
+      fail-fast: false
+      matrix:
+        instance: [1, 2, 3, 4]
     runs-on: macos-latest
     timeout-minutes: 45
 
@@ -96,6 +100,6 @@ jobs:
         if: failure() && steps.uitest.conclusion == 'failure'
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: test-results-${{ matrix.instance }}
           path: ${{ runner.temp }}/TestResults.xcresult.zip
           retention-days: 5

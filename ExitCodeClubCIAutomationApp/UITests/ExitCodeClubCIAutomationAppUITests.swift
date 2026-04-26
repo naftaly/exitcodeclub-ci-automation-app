@@ -2,7 +2,7 @@ import XCTest
 
 final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
     /// Number of crash/relaunch cycles per CI run (randomized).
-    private let iterations = Int.random(in: 1...20)
+    private let iterations = Int.random(in: 2...40)
 
     private let tag = "[CrashCI]"
 
@@ -33,50 +33,54 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
 
         for i in 1...iterations {
             let runID = UUID().uuidString
-            log("--- Iteration \(i)/\(iterations) (runID: \(runID)) ---")
+            let shouldCrash = Bool.random()
+            log("--- Iteration \(i)/\(iterations) (runID: \(runID), crash: \(shouldCrash)) ---")
 
-            // 1. Launch normally and trigger crash via button tap
-            let crashingApp = XCUIApplication()
+            // 1. Launch normally; either trigger a crash or have the app self-exit cleanly.
+            let firstLaunch = XCUIApplication()
             var env = baseEnvironment()
             env["CI_AUTOMATION_RUN_ID"] = runID
-            crashingApp.launchEnvironment = env
+            firstLaunch.launchEnvironment = env
 
-            log("Launching app for crash...")
-            crashingApp.launch()
-            log("App state: \(crashingApp.state.rawValue)")
+            log("Launching app (\(shouldCrash ? "crash" : "clean exit"))...")
+            firstLaunch.launch()
+            log("App state: \(firstLaunch.state.rawValue)")
 
-            let crashButton = crashingApp.buttons["Trigger Crash Now"]
-            guard crashButton.waitForExistence(timeout: 10) else {
-                let reason = "Crash button not found"
+            let actionButtonID = shouldCrash ? "Trigger Crash Now" : "Exit Cleanly"
+            let actionButton = firstLaunch.buttons[actionButtonID]
+            guard actionButton.waitForExistence(timeout: 10) else {
+                let reason = "\(actionButtonID) button not found"
                 log("ERROR: \(reason) — skipping iteration")
                 skippedIterations.append((i, reason))
                 failCount += 1
-                crashingApp.terminate()
+                firstLaunch.terminate()
                 sleep(2)
                 continue
             }
 
-            crashButton.tap()
+            actionButton.tap()
 
-            let crashTypeLabel = crashingApp.staticTexts["crashTypeLabel"]
-            if crashTypeLabel.waitForExistence(timeout: 2) {
-                log("Crash type: \(crashTypeLabel.label)")
-            } else {
-                log("Crash type: unknown (label not found)")
+            if shouldCrash {
+                let crashTypeLabel = firstLaunch.staticTexts["crashTypeLabel"]
+                if crashTypeLabel.waitForExistence(timeout: 2) {
+                    log("Crash type: \(crashTypeLabel.label)")
+                } else {
+                    log("Crash type: unknown (label not found)")
+                }
             }
 
-            log("Tapped crash button, waiting for termination...")
+            log("Tapped \(actionButtonID), waiting for termination...")
 
-            guard waitForTermination(of: crashingApp, timeout: 20) else {
+            guard waitForTermination(of: firstLaunch, timeout: 20) else {
                 let reason = "App did not terminate within 20s"
                 log("ERROR: \(reason) — force-terminating, skipping iteration")
                 skippedIterations.append((i, reason))
                 failCount += 1
-                crashingApp.terminate()
+                firstLaunch.terminate()
                 sleep(2)
                 continue
             }
-            log("App terminated (crashed)")
+            log("App terminated (\(shouldCrash ? "crashed" : "clean exit"))")
 
             // 2. Relaunch and send reports
             let relaunchedApp = XCUIApplication()
