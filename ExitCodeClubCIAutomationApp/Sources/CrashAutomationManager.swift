@@ -346,6 +346,8 @@ final class CrashAutomationManager: ObservableObject {
         } catch {
             reportsStatusText = "Install failed: \(error.localizedDescription)"
         }
+
+        ProfilingCoordinator.shared.start()
     }
 
     private var pendingCrash = false

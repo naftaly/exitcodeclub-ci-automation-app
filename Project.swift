@@ -45,6 +45,7 @@ let project = Project(
                 .package(product: "Installations", type: .runtime),
                 .package(product: "Filters", type: .runtime),
                 .package(product: "DemangleFilter", type: .runtime),
+                .package(product: "Profiler", type: .runtime),
             ]
         ),
         .target(
