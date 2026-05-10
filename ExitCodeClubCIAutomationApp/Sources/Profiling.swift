@@ -5,6 +5,8 @@ import KSCrashProfiler
 import UIKit
 #endif
 
+private let profileWriteSampleRate: Double = 0.1
+
 /// Wires up sampling profiles that piggy-back on the KSCrash report store.
 ///
 /// Two profiles run by default:
@@ -57,6 +59,7 @@ final class ProfilingCoordinator {
         startupProfileID = nil
 
         guard let profile = Profiler.main.endProfile(id: id) else { return }
+        guard Double.random(in: 0..<1) < profileWriteSampleRate else { return }
         DispatchQueue.global(qos: .utility).async {
             _ = profile.writeReport()
         }
@@ -106,7 +109,8 @@ final class HangProfiler: @unchecked Sendable {
             case .ended:
                 if let id = currentProfileID {
                     if let profile = profiler.endProfile(id: id) {
-                        if profile.durationNs > 500_000_000 {
+                        if profile.durationNs > 500_000_000,
+                           Double.random(in: 0..<1) < profileWriteSampleRate {
                             DispatchQueue.global(qos: .utility).async {
                                 _ = profile.writeReport()
                             }
