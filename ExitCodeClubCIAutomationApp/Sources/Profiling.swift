@@ -30,7 +30,7 @@ final class ProfilingCoordinator {
     func start() {
         guard hangProfiler == nil else { return }
 
-        startupProfileID = Profiler.main.beginProfile(named: "startup")
+        startupProfileID = TimeProfiler.main.beginProfile(named: "startup")
 
         let profiler = HangProfiler(profiler: .main)
         profiler.start()
@@ -58,7 +58,7 @@ final class ProfilingCoordinator {
         guard let id = startupProfileID else { return }
         startupProfileID = nil
 
-        guard let profile = Profiler.main.endProfile(id: id) else { return }
+        guard let profile = TimeProfiler.main.endProfile(id: id) else { return }
         guard Double.random(in: 0..<1) < profileWriteSampleRate else { return }
         DispatchQueue.global(qos: .utility).async {
             _ = profile.writeReport()
@@ -72,12 +72,12 @@ final class ProfilingCoordinator {
 /// `HangChangeType.ended`, writing the report on a background queue when the
 /// hang lasted at least 500 ms. Ported from the Reliability SPM.
 final class HangProfiler: @unchecked Sendable {
-    private let profiler: Profiler
+    private let profiler: TimeProfiler
     private var currentProfileID: ProfileID?
     private var observerToken: AnyObject?
     private let lock = NSLock()
 
-    init(profiler: Profiler = .main) {
+    init(profiler: TimeProfiler = .main) {
         self.profiler = profiler
     }
 
