@@ -42,7 +42,6 @@ let project = Project(
             dependencies: [
                 .target(name: "CrashGeneratorsObjC"),
                 .package(product: "Recording", type: .runtime),
-                .package(product: "Installations", type: .runtime),
                 .package(product: "Filters", type: .runtime),
                 .package(product: "DemangleFilter", type: .runtime),
                 .package(product: "Profiler", type: .runtime),

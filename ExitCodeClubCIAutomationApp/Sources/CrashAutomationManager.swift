@@ -1,6 +1,5 @@
 import Foundation
 import KSCrashRecording
-import KSCrashInstallations
 import KSCrashFilters
 import KSCrashDemangleFilter
 import CrashGeneratorsObjC
@@ -330,7 +329,7 @@ final class CrashAutomationManager: ObservableObject {
     }
 
     private func installCrashReporter() {
-        let config = KSCrashConfiguration()
+        let config = CrashInstallConfiguration()
 
         config.enableQueueNameSearch = true
         config.enableSwapCxaThrow = true
@@ -338,7 +337,6 @@ final class CrashAutomationManager: ObservableObject {
         config.enableHangReporting = true
         config.reportStoreConfiguration.maxReportCount = 50
         config.reportStoreConfiguration.maxRunSummaryCount = 50
-        config.reportStoreConfiguration.reportCleanupPolicy = .onSuccess
 
         do {
             try KSCrash.shared.install(with: config)
@@ -398,9 +396,10 @@ final class CrashAutomationManager: ObservableObject {
             return
         }
 
-        let sink = CrashServiceSink(url: reportsURL())
-        reportStore.sink = CrashReportFilterPipeline(filters: [sink])
-        reportStore.runSink = RunSummarySink(url: runsURL())
+        let sendConfig = CrashSendConfiguration()
+        sendConfig.reportFilters = [CrashServiceSink(url: reportsURL())]
+        sendConfig.runSummaryFilters = [RunSummarySink(url: runsURL())]
+        sendConfig.reportCleanupPolicy = .onSuccess
 
         let reportIDs = reportStore.reportIDs.map { $0.int64Value }
 
@@ -410,7 +409,7 @@ final class CrashAutomationManager: ObservableObject {
 
         for reportID in reportIDs {
             do {
-                _ = try await reportStore.sendReport(withID: reportID, includeCurrentRun: false)
+                _ = try await sendReport(reportStore: reportStore, id: reportID, configuration: sendConfig)
                 sentCount += 1
             } catch {
                 failedCount += 1
@@ -421,7 +420,7 @@ final class CrashAutomationManager: ObservableObject {
 
         var runsSentCount = 0
         do {
-            let sentRuns = try await reportStore.sendAllRunSummaries()
+            let sentRuns = try await sendAllRunSummaries(reportStore: reportStore, configuration: sendConfig)
             runsSentCount = sentRuns.count
         } catch {
             lastError = "\(error)"
@@ -433,5 +432,36 @@ final class CrashAutomationManager: ObservableObject {
             status += "\nError: \(lastError)"
         }
         reportsStatusText = status
+    }
+
+    private nonisolated func sendReport(
+        reportStore: CrashReportStore,
+        id: Int64,
+        configuration: CrashSendConfiguration
+    ) async throws -> [any CrashReport] {
+        try await withCheckedThrowingContinuation { continuation in
+            reportStore.sendReport(id: id, includeCurrentRun: false, with: configuration) { reports, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: reports ?? [])
+                }
+            }
+        }
+    }
+
+    private nonisolated func sendAllRunSummaries(
+        reportStore: CrashReportStore,
+        configuration: CrashSendConfiguration
+    ) async throws -> [RunSummary] {
+        try await withCheckedThrowingContinuation { continuation in
+            reportStore.sendAllRunSummaries(with: configuration) { runs, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: runs ?? [])
+                }
+            }
+        }
     }
 }
