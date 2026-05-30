@@ -31,8 +31,25 @@
 
 set -e
 
+# Load a local .env (e.g. KSCRASH_UPLOAD_API_KEY=...) if present, for local runs.
+# In CI the key is provided via the environment instead, so this is a no-op there.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+for env_file in "$SCRIPT_DIR/.env" "$SCRIPT_DIR/../.env"; do
+    if [[ -f "$env_file" ]]; then
+        set -a; . "$env_file"; set +a
+        break
+    fi
+done
+
 # Server URL (automatically set when downloaded from the service)
 BACKEND_URL="https://kscrash-api-765738384004.us-central1.run.app"
+
+# Optional upload API key. If the server requires authenticated uploads, set
+# KSCRASH_UPLOAD_API_KEY in your environment. Sent as an X-API-Key header.
+AUTH_ARGS=()
+if [[ -n "${KSCRASH_UPLOAD_API_KEY:-}" ]]; then
+    AUTH_ARGS=(-H "X-API-Key: ${KSCRASH_UPLOAD_API_KEY}")
+fi
 
 DEVICE_SUPPORT_DIR="$HOME/Library/Developer/Xcode/iOS DeviceSupport"
 
@@ -271,6 +288,7 @@ upload_version() {
 
         # Check which UUIDs already exist
         CHECK_RESPONSE=$(curl -s -X POST \
+            "${AUTH_ARGS[@]}" \
             -H "Content-Type: application/json" \
             -d "{\"uuids\": $UUIDS_JSON}" \
             "$BACKEND_URL/api/system-symbols/check" 2>/dev/null)
@@ -318,6 +336,7 @@ upload_version() {
 
         # Upload batch
         curl -s -o /tmp/upload_response.json -w "%{http_code}" -X POST \
+            "${AUTH_ARGS[@]}" \
             -F "file=@$ZIP_FILE" \
             "$BACKEND_URL/api/system-symbols?ios_version=$ENCODED_VERSION" \
             >/tmp/upload_http_code
@@ -395,6 +414,7 @@ upload_version() {
 
                 # Get signed upload URL
                 URL_RESPONSE=$(curl -s -X POST \
+                    "${AUTH_ARGS[@]}" \
                     -H "Content-Type: application/json" \
                     -d "{\"uuid\": \"$UUID\", \"binary_name\": \"$BINARY_NAME\", \"file_size\": $FILE_SIZE}" \
                     "$BACKEND_URL/api/system-symbols/upload-url" 2>/dev/null)
@@ -439,6 +459,7 @@ upload_version() {
 
                 # Register the uploaded file
                 REG_RESPONSE=$(curl -s -X POST \
+                    "${AUTH_ARGS[@]}" \
                     -H "Content-Type: application/json" \
                     -d "{\"uuid\": \"$UUID\", \"binary_name\": \"$BINARY_NAME\", \"gcs_path\": \"$GCS_PATH\", \"ios_version\": \"$FULL_VERSION\"}" \
                     "$BACKEND_URL/api/system-symbols/register" 2>/dev/null)

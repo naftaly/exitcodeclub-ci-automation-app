@@ -17,6 +17,7 @@ jobs:
         instance: [1, 2, 3, 4]
     runs-on: macos-latest
     timeout-minutes: 45
+    environment: EXIT_CODE_CLUB
 
     steps:
       - name: Checkout
@@ -74,6 +75,8 @@ jobs:
             2>&1 | xcbeautify
 
       - name: Upload dSYMs
+        env:
+          KSCRASH_UPLOAD_API_KEY: ${{ secrets.KSCRASH_UPLOAD_API_KEY }}
         run: |
           ./scripts/upload-dsyms-ci.sh \
             --backend-url "https://kscrash-api-765738384004.us-central1.run.app" \

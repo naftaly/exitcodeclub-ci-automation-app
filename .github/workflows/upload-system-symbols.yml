@@ -13,6 +13,7 @@ jobs:
   upload-symbols:
     runs-on: macos-latest
     timeout-minutes: 120
+    environment: EXIT_CODE_CLUB
 
     steps:
       - name: Checkout
@@ -35,6 +36,8 @@ jobs:
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
 
       - name: Upload simulator system symbols
+        env:
+          KSCRASH_UPLOAD_API_KEY: ${{ secrets.KSCRASH_UPLOAD_API_KEY }}
         run: |
           echo "Uploading build: ${{ steps.detect.outputs.build }}"
           ./scripts/upload-system-symbols.sh \

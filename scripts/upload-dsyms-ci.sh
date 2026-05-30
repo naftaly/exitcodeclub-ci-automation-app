@@ -1,6 +1,23 @@
 #!/bin/bash
 set -euo pipefail
 
+# Load a local .env (e.g. KSCRASH_UPLOAD_API_KEY=...) if present, for local runs.
+# In CI the key is provided via the environment instead, so this is a no-op there.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+for env_file in "$SCRIPT_DIR/.env" "$SCRIPT_DIR/../.env"; do
+  if [[ -f "$env_file" ]]; then
+    set -a; . "$env_file"; set +a
+    break
+  fi
+done
+
+# Optional upload API key. If the server requires authenticated uploads, set
+# KSCRASH_UPLOAD_API_KEY in the environment. Sent as an X-API-Key header.
+AUTH_ARGS=()
+if [[ -n "${KSCRASH_UPLOAD_API_KEY:-}" ]]; then
+  AUTH_ARGS=(-H "X-API-Key: ${KSCRASH_UPLOAD_API_KEY}")
+fi
+
 usage() {
   cat <<USAGE
 Usage: upload-dsyms-ci.sh --backend-url URL [--archive-path PATH | --dsym-folder PATH]
@@ -99,7 +116,7 @@ ATTEMPT=1
 LAST_CODE="000"
 LAST_BODY=""
 while [[ $ATTEMPT -le $RETRIES ]]; do
-  RESPONSE="$(curl -sS -w '\n%{http_code}' -X POST -F "file=@$ZIP_FILE" "$BACKEND_URL/api/dsyms" || true)"
+  RESPONSE="$(curl -sS -w '\n%{http_code}' -X POST "${AUTH_ARGS[@]+"${AUTH_ARGS[@]}"}" -F "file=@$ZIP_FILE" "$BACKEND_URL/api/dsyms" || true)"
   HTTP_CODE="$(echo "$RESPONSE" | tail -1)"
   BODY="$(echo "$RESPONSE" | sed '$d')"
   LAST_CODE="$HTTP_CODE"
