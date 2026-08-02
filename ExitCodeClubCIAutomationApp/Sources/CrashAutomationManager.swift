@@ -291,18 +291,19 @@ final class CrashAutomationManager: ObservableObject {
         Task { await sendPendingReports() }
     }
 
-    /// How long the app stays alive before triggering its crash. Randomized so
-    /// runs vary in length instead of all being the same shape.
+    /// How long the app stays alive before terminating, whether by crash or by
+    /// clean exit. Randomized so runs vary in length instead of all being the
+    /// same shape.
     ///
     /// The UI test's termination timeout has to stay above this plus the abort
     /// fallback below, or slow crash types get reported as hung launches.
-    private static func crashDelay() -> Double { Double.random(in: 5...10) }
+    private static func terminationDelay() -> Double { Double.random(in: 5...10) }
 
     func triggerCrashNow() {
         let crashType = resolveCrashType()
         selectedCrashType = crashType
         // Deferred so XCTest's tap() returns well before the process dies.
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.crashDelay()) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.terminationDelay()) {
             self.scheduleAbortFallback()
             CallChain.run(userInfo: crashType.rawValue) {
                 crashType.triggerRandomized()
@@ -313,7 +314,7 @@ final class CrashAutomationManager: ObservableObject {
     /// Self-terminates the process cleanly so KSCrash finalizes the run summary
     /// as a non-crashing run. Deferred so XCTest's tap() returns first.
     func exitCleanlyNow() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.terminationDelay()) {
             exit(0)
         }
     }
@@ -378,7 +379,7 @@ final class CrashAutomationManager: ObservableObject {
     func onUIReady() {
         guard pendingCrash, let crashType = selectedCrashType else { return }
         pendingCrash = false
-        let delay = Self.crashDelay()
+        let delay = Self.terminationDelay()
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             self.scheduleAbortFallback()
             CallChain.run(userInfo: crashType.rawValue) {
