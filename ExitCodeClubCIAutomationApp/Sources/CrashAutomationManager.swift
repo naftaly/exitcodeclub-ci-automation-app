@@ -291,11 +291,18 @@ final class CrashAutomationManager: ObservableObject {
         Task { await sendPendingReports() }
     }
 
+    /// How long the app stays alive before triggering its crash. Randomized so
+    /// runs vary in length instead of all being the same shape.
+    ///
+    /// The UI test's termination timeout has to stay above this plus the abort
+    /// fallback below, or slow crash types get reported as hung launches.
+    private static func crashDelay() -> Double { Double.random(in: 5...10) }
+
     func triggerCrashNow() {
         let crashType = resolveCrashType()
         selectedCrashType = crashType
-        // Defer the crash by 2s so XCTest's tap() returns before the process dies.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        // Deferred so XCTest's tap() returns well before the process dies.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.crashDelay()) {
             self.scheduleAbortFallback()
             CallChain.run(userInfo: crashType.rawValue) {
                 crashType.triggerRandomized()
@@ -371,7 +378,7 @@ final class CrashAutomationManager: ObservableObject {
     func onUIReady() {
         guard pendingCrash, let crashType = selectedCrashType else { return }
         pendingCrash = false
-        let delay = Double.random(in: 0.5...3.0)
+        let delay = Self.crashDelay()
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             self.scheduleAbortFallback()
             CallChain.run(userInfo: crashType.rawValue) {

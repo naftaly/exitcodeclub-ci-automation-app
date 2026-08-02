@@ -81,8 +81,11 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
 
             log("Tapped \(actionButtonID), waiting for termination...")
 
-            guard waitForTermination(of: firstLaunch, timeout: 20) else {
-                let reason = "App did not terminate within 20s"
+            // Must clear the app's crash delay (up to 10s) plus its abort
+            // fallback (15s after the crash fires), or slow crash types like the
+            // main thread hang get misreported as launches that never died.
+            guard waitForTermination(of: firstLaunch, timeout: 30) else {
+                let reason = "App did not terminate within 30s"
                 log("ERROR: \(reason) — force-terminating, skipping iteration")
                 skippedIterations.append((i, reason))
                 failCount += 1
