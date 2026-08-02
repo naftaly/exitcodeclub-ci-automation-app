@@ -275,6 +275,10 @@ final class CrashAutomationManager: ObservableObject {
     @Published private(set) var reportsStatusText: String = "Starting..."
     @Published private(set) var selectedCrashType: CrashType?
 
+    /// Non-fatal reports filed this run. Surfaced so the UI test can confirm a
+    /// tap actually landed rather than firing blind.
+    @Published private(set) var reportedErrorCount = 0
+
     private var started = false
 
     private init() {}
@@ -289,6 +293,35 @@ final class CrashAutomationManager: ObservableObject {
 
     func sendPendingReportsNow() {
         Task { await sendPendingReports() }
+    }
+
+    /// Realistic non-fatal errors, so reported-error payloads aren't all
+    /// identical the way a single hardcoded name would be.
+    private static let reportableErrors: [(name: String, reason: String)] = [
+        ("NetworkError", "Request timed out after 30s"),
+        ("DecodingError", "Key 'user_id' not found in response"),
+        ("AuthError", "Refresh token rejected by identity provider"),
+        ("StorageError", "Disk write failed: no space left on device"),
+        ("ValidationError", "Received a negative quantity for line item"),
+        ("SyncConflict", "Local revision is behind the server revision"),
+    ]
+
+    /// Files a non-fatal report. The run keeps going, so a single run can ship
+    /// several reports alongside its one summary.
+    func reportErrorNow() {
+        let error = Self.reportableErrors.randomElement()!
+        CallChain.run(userInfo: "reported_error") {
+            KSCrash.shared.reportUserException(
+                error.name,
+                reason: error.reason,
+                language: "Swift",
+                lineOfCode: nil,
+                stackTrace: nil,
+                logAllThreads: false,
+                terminateProgram: false
+            )
+        }
+        reportedErrorCount += 1
     }
 
     /// How long the app stays alive before terminating, whether by crash or by

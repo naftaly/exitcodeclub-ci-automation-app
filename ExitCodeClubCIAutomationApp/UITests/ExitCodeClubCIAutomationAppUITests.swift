@@ -68,6 +68,12 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
                 continue
             }
 
+            // Exercise the app for a while before ending it, so runs differ in
+            // shape: several sessions, some non-fatal reports, varied durations.
+            let plan = Self.makePlan()
+            log("Plan: \(Self.describe(plan))")
+            execute(plan, on: firstLaunch)
+
             actionButton.tap()
 
             if shouldCrash {
@@ -77,6 +83,14 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
                 } else {
                     log("Crash type: unknown (label not found)")
                 }
+            }
+
+            // Ending while backgrounded is the only way to get a run with
+            // user_perceptible false. The termination is already pending on the
+            // app's 5 to 10s timer, so it fires once the app is out of sight.
+            if Bool.random() {
+                log("Backgrounding before termination")
+                XCUIDevice.shared.press(.home)
             }
 
             log("Tapped \(actionButtonID), waiting for termination...")
@@ -157,6 +171,70 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
             log("Failures:")
             for (iter, reason) in skippedIterations {
                 log("  Iteration \(iter): \(reason)")
+            }
+        }
+    }
+
+    // MARK: - Run plan
+
+    /// One step of the randomized activity a run performs before it ends.
+    private enum PlanStep {
+        case reportError
+        case background(TimeInterval)
+        case idle(TimeInterval)
+    }
+
+    /// Kept short on purpose. Every second here multiplies by the iteration
+    /// count, and the workflow has a 45 minute budget.
+    private static func makePlan() -> [PlanStep] {
+        (0..<Int.random(in: 0...4)).map { _ in
+            switch Int.random(in: 0...2) {
+            case 0: return .reportError
+            case 1: return .background(TimeInterval.random(in: 1...3))
+            default: return .idle(TimeInterval.random(in: 1...3))
+            }
+        }
+    }
+
+    private static func describe(_ plan: [PlanStep]) -> String {
+        guard !plan.isEmpty else { return "<none>" }
+        return plan.map { step in
+            switch step {
+            case .reportError: return "reportError"
+            case .background(let seconds): return String(format: "bg %.1fs", seconds)
+            case .idle(let seconds): return String(format: "idle %.1fs", seconds)
+            }
+        }.joined(separator: " -> ")
+    }
+
+    private func execute(_ plan: [PlanStep], on app: XCUIApplication) {
+        for step in plan {
+            switch step {
+            case .reportError:
+                let button = app.buttons["reportErrorButton"]
+                guard button.waitForExistence(timeout: 5) else {
+                    log("WARN: report error button not found, skipping step")
+                    continue
+                }
+                // Confirm the count moved rather than assuming the tap landed.
+                let counter = app.staticTexts["reportedErrorLabel"]
+                let before = counter.exists ? counter.label : ""
+                button.tap()
+                let changed = XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "label != %@", before),
+                    object: counter
+                )
+                if XCTWaiter().wait(for: [changed], timeout: 5) != .completed {
+                    log("WARN: reported error count did not change after tap")
+                }
+
+            case .background(let seconds):
+                XCUIDevice.shared.press(.home)
+                Thread.sleep(forTimeInterval: seconds)
+                app.activate()
+
+            case .idle(let seconds):
+                Thread.sleep(forTimeInterval: seconds)
             }
         }
     }

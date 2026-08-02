@@ -20,11 +20,21 @@ struct ContentView: View {
                 .multilineTextAlignment(.center)
                 .accessibilityIdentifier("reportsStatusLabel")
 
+            Text("Reported errors: \(manager.reportedErrorCount)")
+                .font(.subheadline)
+                .accessibilityIdentifier("reportedErrorLabel")
+
             Button("Trigger Crash Now") {
                 manager.triggerCrashNow()
             }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("triggerCrashButton")
+
+            Button("Report Error") {
+                manager.reportErrorNow()
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("reportErrorButton")
 
             Button("Exit Cleanly") {
                 manager.exitCleanlyNow()
