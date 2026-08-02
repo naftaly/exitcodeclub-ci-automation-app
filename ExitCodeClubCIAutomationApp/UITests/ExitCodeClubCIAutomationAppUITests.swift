@@ -6,6 +6,15 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
 
     private let tag = "[CrashCI]"
 
+    /// Prefix on assertions this test raises deliberately. `XCTExpectFailure`
+    /// below absorbs every issue it is not told to ignore, including our own
+    /// `XCTFail` calls, so failures we want to surface are tagged and matched
+    /// back out.
+    private static let assertionMarker = "[CrashCI-Assert]"
+
+    /// Mirrors `CrashAutomationManager.runsFailedMarker`.
+    private static let runsFailedMarker = "RUNS_FAILED"
+
     private var successCount = 0
     private var failCount = 0
     private var skippedIterations: [(Int, String)] = []
@@ -27,6 +36,7 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
         // entire point of this test.
         let options = XCTExpectedFailure.Options()
         options.isStrict = false
+        options.issueMatcher = { !$0.compactDescription.contains(Self.assertionMarker) }
         XCTExpectFailure("Intentional app crashes are expected", options: options)
 
         log("Starting \(iterations) crash/relaunch iterations")
@@ -115,7 +125,15 @@ final class ExitCodeClubCIAutomationAppUITests: XCTestCase {
             if waitResult == .completed {
                 let statusText = status.label
                 log("Report status: \(statusText)")
-                successCount += 1
+                if statusText.contains(Self.runsFailedMarker) {
+                    let reason = "Run summary send failed (status: \(statusText))"
+                    log("ERROR: \(reason)")
+                    skippedIterations.append((i, reason))
+                    failCount += 1
+                    XCTFail("\(Self.assertionMarker) Iteration \(i): \(reason)")
+                } else {
+                    successCount += 1
+                }
             } else {
                 let currentLabel = status.exists ? status.label : "<not found>"
                 let reason = "Timed out waiting for send (last status: \(currentLabel))"

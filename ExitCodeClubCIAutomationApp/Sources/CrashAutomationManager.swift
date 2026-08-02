@@ -380,6 +380,10 @@ final class CrashAutomationManager: ObservableObject {
         }
     }
 
+    /// Emitted into `reportsStatusText` when the run summary send fails.
+    /// The UI test matches on this literal, so keep the two in sync.
+    static let runsFailedMarker = "RUNS_FAILED"
+
     private static let backendBaseURL = "https://kscrash-api-765738384004.us-central1.run.app"
 
     private func reportsURL() -> URL {
@@ -401,11 +405,25 @@ final class CrashAutomationManager: ObservableObject {
         sendConfig.runSummaryFilters = [RunSummarySink(url: runsURL())]
         sendConfig.reportCleanupPolicy = .onSuccess
 
+        var lastError: String?
+
+        // Run summaries go first so a slow or failing report backlog can't
+        // delay them.
+        var runsSentCount = 0
+        var runsFailed = false
+        do {
+            let sentRuns = try await sendAllRunSummaries(reportStore: reportStore, configuration: sendConfig)
+            runsSentCount = sentRuns.count
+        } catch {
+            runsFailed = true
+            lastError = "\(error)"
+            print("[CrashAutomation] Failed to send run summaries: \(error)")
+        }
+
         let reportIDs = reportStore.reportIDs.map { $0.int64Value }
 
         var sentCount = 0
         var failedCount = 0
-        var lastError: String?
 
         for reportID in reportIDs {
             do {
@@ -418,16 +436,14 @@ final class CrashAutomationManager: ObservableObject {
             }
         }
 
-        var runsSentCount = 0
-        do {
-            let sentRuns = try await sendAllRunSummaries(reportStore: reportStore, configuration: sendConfig)
-            runsSentCount = sentRuns.count
-        } catch {
-            lastError = "\(error)"
-            print("[CrashAutomation] Failed to send run summaries: \(error)")
+        // A run count of zero is legitimate when there is nothing pending, so
+        // failure gets its own marker rather than being inferred from the
+        // count. The UI test keys off this token to fail the CI run.
+        var status = "Runs: \(runsSentCount)"
+        if runsFailed {
+            status += " \(Self.runsFailedMarker)"
         }
-
-        var status = "Sent: \(sentCount), Failed: \(failedCount), Runs: \(runsSentCount)"
+        status += ", Sent: \(sentCount), Failed: \(failedCount)"
         if let lastError {
             status += "\nError: \(lastError)"
         }
