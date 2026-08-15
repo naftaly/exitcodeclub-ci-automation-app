@@ -1,5 +1,5 @@
 import Foundation
-import KSCrashRecording
+import KSCrash
 import KSCrashFilters
 import KSCrashDemangleFilter
 import CrashGeneratorsObjC
@@ -443,18 +443,28 @@ final class CrashAutomationManager: ObservableObject {
 
         let sendConfig = CrashSendConfiguration()
         sendConfig.reportFilters = [CrashServiceSink(url: reportsURL())]
-        sendConfig.runSummaryFilters = [RunSummarySink(url: runsURL())]
         sendConfig.reportCleanupPolicy = .onSuccess
 
         var lastError: String?
 
         // Run summaries go first so a slow or failing report backlog can't
-        // delay them.
+        // delay them. Each summary goes through the pipeline on its own; a
+        // summary the sink throws on stays on disk and is reported as kept.
         var runsSentCount = 0
         var runsFailed = false
         do {
-            let sentRuns = try await sendAllRunSummaries(reportStore: reportStore, configuration: sendConfig)
-            runsSentCount = sentRuns.count
+            let runSendConfig = SendConfiguration(
+                runSummaryPipeline: [AnyPipelineStage(RunSummarySink(url: runsURL()))]
+            )
+            let result = try await KSCrash.shared.sendRunSummaries(with: runSendConfig)
+            runsSentCount = result.delivered.count
+            for item in result.items {
+                if case .kept(let error) = item.outcome {
+                    runsFailed = true
+                    lastError = "\(error)"
+                    print("[CrashAutomation] Failed to send run summary \(item.id): \(error)")
+                }
+            }
         } catch {
             runsFailed = true
             lastError = "\(error)"
@@ -495,28 +505,13 @@ final class CrashAutomationManager: ObservableObject {
         reportStore: CrashReportStore,
         id: Int64,
         configuration: CrashSendConfiguration
-    ) async throws -> [any CrashReport] {
+    ) async throws -> [any KSCrashReport] {
         try await withCheckedThrowingContinuation { continuation in
             reportStore.sendReport(id: id, includeCurrentRun: false, with: configuration) { reports, error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else {
                     continuation.resume(returning: reports ?? [])
-                }
-            }
-        }
-    }
-
-    private nonisolated func sendAllRunSummaries(
-        reportStore: CrashReportStore,
-        configuration: CrashSendConfiguration
-    ) async throws -> [RunSummary] {
-        try await withCheckedThrowingContinuation { continuation in
-            reportStore.sendAllRunSummaries(with: configuration) { runs, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: runs ?? [])
                 }
             }
         }

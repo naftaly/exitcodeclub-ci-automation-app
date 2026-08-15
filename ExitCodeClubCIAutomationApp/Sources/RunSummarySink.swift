@@ -1,13 +1,13 @@
 import Foundation
-@preconcurrency import KSCrashRecording
+import KSCrash
 
-final class RunSummarySink: NSObject, CrashRunFilter {
-
-    // Server caps a single envelope at 100 runs. The store's default
-    // maxRunSummaryCount is 50, so a single batch is the common case;
-    // chunking is here for the unusual run where someone bumped the cap.
-    private static let maxBatchSize = 100
-
+/// Terminal stage of the run-summary pipeline: POSTs each summary to the
+/// backend's runs endpoint.
+///
+/// KSCrash hands summaries to stages one at a time, so every POST carries a
+/// single-run `{"runs":[...]}` envelope. Returning the payload marks the run
+/// delivered (deleted from disk); throwing keeps it on disk for the next send.
+struct RunSummarySink: PipelineStage {
     private let apiURL: URL
     private let session: URLSession
 
@@ -16,58 +16,21 @@ final class RunSummarySink: NSObject, CrashRunFilter {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         self.session = URLSession(configuration: config)
-        super.init()
     }
 
-    func filterRuns(
-        _ runs: [RunSummary],
-        onCompletion: (([RunSummary]?, (any Error)?) -> Void)?
-    ) {
-        guard !runs.isEmpty else {
-            onCompletion?(runs, nil)
-            return
-        }
-
-        Task {
-            // The server is idempotent on run_id, so a 2xx that reports
-            // duplicates still means "delivered" — include those runs in
-            // accepted so the store can delete the on-disk files. Per-run
-            // attribution within a batch isn't possible (server returns
-            // only counts), so a failed batch keeps every run in it for
-            // retry on the next call.
-            var accepted: [RunSummary] = []
-            var lastError: Error?
-
-            for batch in Self.chunked(runs, by: Self.maxBatchSize) {
-                do {
-                    try await uploadBatch(batch)
-                    accepted.append(contentsOf: batch)
-                } catch {
-                    lastError = error
-                    print("[RunSummarySink] Failed batch of \(batch.count): \(error)")
-                }
-            }
-
-            onCompletion?(accepted, lastError)
-        }
+    func process(_ run: RunSummary) async throws -> RunSummary? {
+        try await upload(run)
+        return run
     }
 
-    private func uploadBatch(_ runs: [RunSummary]) async throws {
-        // Each RunSummary already knows how to encode itself to the wire
-        // schema. To assemble a {"runs":[...]} envelope we deserialize each
-        // back to a Foundation object and reserialize as one — a string
-        // splice would be faster but would couple this sink to the
-        // encoder's exact byte layout (whitespace, key ordering, etc.).
-        var runObjects: [Any] = []
-        runObjects.reserveCapacity(runs.count)
-        for run in runs {
-            guard let data = run.jsonData() else {
-                throw URLError(.cannotParseResponse)
-            }
-            runObjects.append(try JSONSerialization.jsonObject(with: data))
-        }
-        let envelope: [String: Any] = ["runs": runObjects]
-        let body = try JSONSerialization.data(withJSONObject: envelope)
+    private struct Envelope: Encodable {
+        let runs: [RunSummary]
+    }
+
+    private func upload(_ run: RunSummary) async throws {
+        // RunSummary encodes to the wire schema, so the envelope is just the
+        // model wrapped in the {"runs":[...]} the server expects.
+        let body = try JSONEncoder().encode(Envelope(runs: [run]))
 
         var request = URLRequest(url: apiURL)
         request.httpMethod = "POST"
@@ -75,20 +38,15 @@ final class RunSummarySink: NSObject, CrashRunFilter {
         request.httpBody = body
 
         let (data, response) = try await session.data(for: request)
+        // The server is idempotent on run_id, so a 2xx that reports a
+        // duplicate still means "delivered".
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
+            let responseBody = String(data: data, encoding: .utf8) ?? ""
             throw NSError(
                 domain: "RunSummarySink",
                 code: (response as? HTTPURLResponse)?.statusCode ?? 0,
-                userInfo: [NSLocalizedDescriptionKey: body]
+                userInfo: [NSLocalizedDescriptionKey: responseBody]
             )
-        }
-    }
-
-    private static func chunked<T>(_ source: [T], by size: Int) -> [[T]] {
-        guard size > 0, source.count > size else { return [source] }
-        return stride(from: 0, to: source.count, by: size).map {
-            Array(source[$0..<Swift.min($0 + size, source.count)])
         }
     }
 }

@@ -41,6 +41,7 @@ let project = Project(
             sources: ["ExitCodeClubCIAutomationApp/Sources/**"],
             dependencies: [
                 .target(name: "CrashGeneratorsObjC"),
+                .package(product: "KSCrash", type: .runtime),
                 .package(product: "Recording", type: .runtime),
                 .package(product: "Filters", type: .runtime),
                 .package(product: "DemangleFilter", type: .runtime),

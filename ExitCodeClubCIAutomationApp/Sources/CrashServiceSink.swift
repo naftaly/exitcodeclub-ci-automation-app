@@ -14,8 +14,8 @@ final class CrashServiceSink: NSObject, CrashReportFilter {
     }
 
     func filterReports(
-        _ reports: [any CrashReport],
-        onCompletion: (([any CrashReport]?, (any Error)?) -> Void)?
+        _ reports: [any KSCrashReport],
+        onCompletion: (([any KSCrashReport]?, (any Error)?) -> Void)?
     ) {
         guard !reports.isEmpty else {
             onCompletion?(reports, nil)
@@ -23,7 +23,7 @@ final class CrashServiceSink: NSObject, CrashReportFilter {
         }
 
         Task {
-            var successfulReports: [any CrashReport] = []
+            var successfulReports: [any KSCrashReport] = []
             var lastError: Error?
 
             for report in reports {
@@ -39,7 +39,7 @@ final class CrashServiceSink: NSObject, CrashReportFilter {
         }
     }
 
-    private func uploadReport(_ report: any CrashReport) async throws {
+    private func uploadReport(_ report: any KSCrashReport) async throws {
         guard let dictReport = report as? CrashReportDictionary else {
             throw URLError(.badServerResponse)
         }
