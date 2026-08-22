@@ -43,8 +43,6 @@ let project = Project(
                 .target(name: "CrashGeneratorsObjC"),
                 .package(product: "KSCrash", type: .runtime),
                 .package(product: "Recording", type: .runtime),
-                .package(product: "Filters", type: .runtime),
-                .package(product: "DemangleFilter", type: .runtime),
                 .package(product: "Profiler", type: .runtime),
             ]
         ),

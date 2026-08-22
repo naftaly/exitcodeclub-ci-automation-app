@@ -1,7 +1,5 @@
 import Foundation
 import KSCrash
-import KSCrashFilters
-import KSCrashDemangleFilter
 import CrashGeneratorsObjC
 
 enum CrashType: String, CaseIterable {
@@ -436,14 +434,15 @@ final class CrashAutomationManager: ObservableObject {
     }
 
     private func sendPendingReports() async {
-        guard let reportStore = KSCrash.shared.reportStore else {
+        guard KSCrash.shared.reportStore != nil else {
             reportsStatusText = "No report store"
             return
         }
 
-        let sendConfig = CrashSendConfiguration()
-        sendConfig.reportFilters = [CrashServiceSink(url: reportsURL())]
-        sendConfig.reportCleanupPolicy = .onSuccess
+        let sendConfig = SendConfiguration(
+            runSummaryPipeline: [AnyPipelineStage(RunSummarySink(url: runsURL()))],
+            reportPipeline: [AnyPipelineStage(CrashServiceSink(url: reportsURL()))]
+        )
 
         var lastError: String?
 
@@ -453,10 +452,7 @@ final class CrashAutomationManager: ObservableObject {
         var runsSentCount = 0
         var runsFailed = false
         do {
-            let runSendConfig = SendConfiguration(
-                runSummaryPipeline: [AnyPipelineStage(RunSummarySink(url: runsURL()))]
-            )
-            let result = try await KSCrash.shared.sendRunSummaries(with: runSendConfig)
+            let result = try await KSCrash.shared.sendRunSummaries(with: sendConfig)
             runsSentCount = result.delivered.count
             for item in result.items {
                 if case .kept(let error) = item.outcome {
@@ -471,20 +467,24 @@ final class CrashAutomationManager: ObservableObject {
             print("[CrashAutomation] Failed to send run summaries: \(error)")
         }
 
-        let reportIDs = reportStore.reportIDs.map { $0.int64Value }
-
+        // Reports from the current run stay on disk; this run's own reports
+        // upload on the next launch, the same way its run summary does.
         var sentCount = 0
         var failedCount = 0
-
-        for reportID in reportIDs {
-            do {
-                _ = try await sendReport(reportStore: reportStore, id: reportID, configuration: sendConfig)
-                sentCount += 1
-            } catch {
-                failedCount += 1
-                lastError = "\(error)"
-                print("[CrashAutomation] Failed to send report \(reportID): \(error)")
+        do {
+            let result = try await KSCrash.shared.sendReports(with: sendConfig)
+            sentCount = result.delivered.count
+            for item in result.items {
+                if case .kept(let error) = item.outcome {
+                    failedCount += 1
+                    lastError = "\(error)"
+                    print("[CrashAutomation] Failed to send report \(item.id): \(error)")
+                }
             }
+        } catch {
+            failedCount += 1
+            lastError = "\(error)"
+            print("[CrashAutomation] Failed to send reports: \(error)")
         }
 
         // A run count of zero is legitimate when there is nothing pending, so
@@ -499,21 +499,5 @@ final class CrashAutomationManager: ObservableObject {
             status += "\nError: \(lastError)"
         }
         reportsStatusText = status
-    }
-
-    private nonisolated func sendReport(
-        reportStore: CrashReportStore,
-        id: Int64,
-        configuration: CrashSendConfiguration
-    ) async throws -> [any KSCrashReport] {
-        try await withCheckedThrowingContinuation { continuation in
-            reportStore.sendReport(id: id, includeCurrentRun: false, with: configuration) { reports, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: reports ?? [])
-                }
-            }
-        }
     }
 }
