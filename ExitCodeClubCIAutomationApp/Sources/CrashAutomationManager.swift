@@ -309,7 +309,7 @@ final class CrashAutomationManager: ObservableObject {
     func reportErrorNow() {
         let error = Self.reportableErrors.randomElement()!
         CallChain.run(userInfo: "reported_error") {
-            KSCrash.shared.reportUserException(
+            KSCrash.shared.reportException(
                 error.name,
                 reason: error.reason,
                 language: "Swift",
@@ -368,20 +368,22 @@ final class CrashAutomationManager: ObservableObject {
     }
 
     private func installCrashReporter() {
-        let config = CrashInstallConfiguration()
+        var config = InstallConfiguration(namespace: "ExitCodeClub")
 
-        config.enableQueueNameSearch = true
-        config.enableSwapCxaThrow = true
-        config.enableCompactBinaryImages = true
-        config.enableHangReporting = true
-        config.reportStoreConfiguration.maxReportCount = 50
-        config.reportStoreConfiguration.maxRunSummaryCount = 50
+        config.searchesQueueNames = true
+        config.swapsCxaThrow = true
+        config.compactsBinaryImages = true
+        config.reportsResolvedHangs = true
+        config.maxReportCount = 50
+        config.maxRunSummaryCount = 50
 
         do {
-            try KSCrash.shared.install(with: config)
+            try KSCrash.shared.install(config)
             KSCrash.shared.setUserID("\(Int.random(in: 1...1_000_000))")
         } catch {
-            reportsStatusText = "Install failed: \(error.localizedDescription)"
+            // InstallError is a plain Swift enum, so its localizedDescription
+            // is the generic "operation couldn't be completed" text.
+            reportsStatusText = "Install failed: \(error)"
         }
 
         ProfilingCoordinator.shared.start()
@@ -434,8 +436,8 @@ final class CrashAutomationManager: ObservableObject {
     }
 
     private func sendPendingReports() async {
-        guard KSCrash.shared.reportStore != nil else {
-            reportsStatusText = "No report store"
+        guard KSCrash.shared.installConfiguration != nil else {
+            reportsStatusText = "Not installed"
             return
         }
 

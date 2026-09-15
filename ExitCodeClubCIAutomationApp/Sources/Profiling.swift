@@ -1,5 +1,5 @@
 import Foundation
-import KSCrashRecording
+import KSCrash
 import KSCrashProfiler
 #if canImport(UIKit)
 import UIKit
@@ -15,8 +15,8 @@ private let profileWriteSampleRate: Double = 0.1
 ///   ends when the hang resolves; profiles longer than 500 ms are written.
 ///
 /// Both flows hand their finished profiles to KSCrash via `writeReport()`, so
-/// they appear in `KSCrash.shared.reportStore` alongside crash reports and
-/// upload through the existing `CrashServiceSink`.
+/// they land in the report store alongside crash reports and upload through
+/// the existing `CrashServiceSink`.
 @MainActor
 final class ProfilingCoordinator {
     static let shared = ProfilingCoordinator()
@@ -68,13 +68,13 @@ final class ProfilingCoordinator {
 
 /// Captures backtraces while the watchdog reports a main-thread hang.
 ///
-/// Begins a profile on `HangChangeType.started` and ends it on
-/// `HangChangeType.ended`, writing the report on a background queue when the
+/// Begins a profile on `HangEvent.Change.started` and ends it on
+/// `HangEvent.Change.ended`, writing the report on a background queue when the
 /// hang lasted at least 500 ms. Ported from the Reliability SPM.
 final class HangProfiler: @unchecked Sendable {
     private let profiler: TimeProfiler
     private var currentProfileID: ProfileID?
-    private var observerToken: AnyObject?
+    private var eventsTask: Task<Void, Never>?
     private let lock = NSLock()
 
     init(profiler: TimeProfiler = .main) {
@@ -83,17 +83,22 @@ final class HangProfiler: @unchecked Sendable {
 
     func start() {
         lock.withLock {
-            guard observerToken == nil else { return }
-            let token = KSCrash.shared.addHangObserver { [weak self] change, start, end in
-                self?.handleHangChange(change, startTimestamp: start, endTimestamp: end)
+            guard eventsTask == nil else { return }
+            // Taken here rather than inside the task so the stream is
+            // subscribed before start() returns.
+            let events = KSCrash.shared.hangEvents
+            eventsTask = Task { [weak self] in
+                for await event in events {
+                    self?.handleHangChange(event.change)
+                }
             }
-            observerToken = token as AnyObject
         }
     }
 
     func stop() {
         lock.withLock {
-            observerToken = nil
+            eventsTask?.cancel()
+            eventsTask = nil
             if let id = currentProfileID {
                 _ = profiler.endProfile(id: id)
                 currentProfileID = nil
@@ -101,7 +106,7 @@ final class HangProfiler: @unchecked Sendable {
         }
     }
 
-    private func handleHangChange(_ change: HangChangeType, startTimestamp: UInt64, endTimestamp: UInt64) {
+    private func handleHangChange(_ change: HangEvent.Change) {
         lock.withLock {
             switch change {
             case .started:
@@ -118,9 +123,7 @@ final class HangProfiler: @unchecked Sendable {
                     }
                     currentProfileID = nil
                 }
-            case .updated, .none:
-                break
-            @unknown default:
+            case .updated:
                 break
             }
         }

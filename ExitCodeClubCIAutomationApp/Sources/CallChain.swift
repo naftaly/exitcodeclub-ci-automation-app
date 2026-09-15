@@ -1,5 +1,5 @@
 import Foundation
-import KSCrashRecording
+import KSCrash
 
 enum CallChain {
 
@@ -17,11 +17,11 @@ enum CallChain {
     }
 
     static func setUserInfo(_ key: String) {
-        KSCrash.shared.setUserInfo(key, forKey: "call_chain")
+        KSCrash.shared.metadata["call_chain"] = key
     }
 
     static func clearUserInfo(_ key: String) {
-        KSCrash.shared.setUserInfo(nil, forKey: "call_chain")
+        KSCrash.shared.metadata.removeValue(forKey: "call_chain")
     }
 
     // MARK: - Dispatcher
